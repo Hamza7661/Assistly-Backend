@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: assistly-backend
+    env: node
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: API_PREFIX
+        value: /api
+      - key: API_VERSION
+        value: v1
+      - key: MONGODB_URI
+        value: CHANGE_ME_MONGODB_ATLAS_URI
+      - key: JWT_SECRET
+        value: CHANGE_ME_STRONG_SECRET
+      - key: SENDGRID_API_KEY
+        value: CHANGE_ME_SENDGRID_KEY
+      - key: FROM_NAME
+        value: Assistly
+      - key: FROM_EMAIL
+        value: CHANGE_ME@domain.com
+      - key: ALLOWED_ORIGINS
+        value: https://your-frontend.example,https://assistly-backend.onrender.com
+      - key: BCRYPT_ROUNDS
+        value: "12"
+      - key: RATE_LIMIT_WINDOW_MS
+        value: "900000"
+      - key: RATE_LIMIT_MAX_REQUESTS
+        value: "100"
+      - key: AUTH_RATE_LIMIT_MAX
+        value: "5"
+      - key: SIGNUP_RATE_LIMIT_MAX
+        value: "3"
