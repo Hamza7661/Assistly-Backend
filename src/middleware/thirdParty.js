@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { AppError } = require('../utils/errorHandler');
+const { logger } = require('../utils/logger');
 
 // remove JWT option: HMAC-only from here down
 
@@ -40,14 +41,27 @@ const verifySignedThirdPartyForParamUser = (req, res, next) => {
     if (seenNonces.has(nonce)) return next(new AppError('Replay detected', 401));
 
     const basePath = req.originalUrl.split('?')[0];
-    const userId = req.params.id;
+    const userId = req.params.id || req.params.userId;
     const toSign = `${req.method}\n${basePath}\nuserId=${userId}\n${tsMs}\n${nonce}`;
     const expected = crypto
       .createHmac('sha256', getSigningSecret())
       .update(toSign)
       .digest('hex');
 
-    if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(String(sig)))) {
+    // normalize provided signature to lowercase hex
+    const providedSig = String(sig).trim().toLowerCase();
+    if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(providedSig))) {
+      // Dev/debug aid: show canonical server view used for signing
+      logger.error('Third-party HMAC mismatch', {
+        method: req.method,
+        path: basePath,
+        userId,
+        ts: tsMs,
+        nonce,
+        toSign,
+        expected,
+        provided: providedSig
+      });
       return next(new AppError('Invalid signature', 401));
     }
 
