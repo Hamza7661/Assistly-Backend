@@ -14,6 +14,7 @@ const packageRoutes = require('./routes/packages');
 const emailRoutes = require('./routes/email');
 // const faqRoutes = require('./routes/faq');
 const questionnaireRoutes = require('./routes/questionnaire');
+const availabilityRoutes = require('./routes/availability');
 
 class Application {
   constructor() {
@@ -55,6 +56,7 @@ class Application {
     this.app.use(`${basePath}/email`, securityMiddleware.getRateLimiters().api, emailRoutes);
     // this.app.use(`${basePath}/faq`, securityMiddleware.getRateLimiters().api, faqRoutes);
     this.app.use(`${basePath}/questionnaire`, securityMiddleware.getRateLimiters().api, questionnaireRoutes);
+    this.app.use(`${basePath}/availability`, securityMiddleware.getRateLimiters().api, availabilityRoutes);
 
     this.app.get('/', (req, res) => {
       res.json({
