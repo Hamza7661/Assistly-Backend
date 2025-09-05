@@ -1,6 +1,7 @@
 const express = require('express');
 const { AppError } = require('../utils/errorHandler');
 const { authenticateToken, requireUserOrAdmin } = require('../middleware/auth');
+const { verifySignedThirdPartyForParamUser } = require('../middleware/thirdParty');
 const { Lead, leadCreateSchema, leadQuerySchema, leadUpdateSchema } = require('../models/Lead');
 
 const router = express.Router();
@@ -120,5 +121,20 @@ router.delete('/:id', authenticateToken, requireUserOrAdmin, async (req, res, ne
 });
 
 module.exports = router;
+ 
+// HMAC public create for a specific user (no JWT)
+router.post('/public/:userId', verifySignedThirdPartyForParamUser, async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+    const { error, value } = leadCreateSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
+    if (error) {
+      const messages = error.details.map(d => d.message);
+      throw new AppError(`Validation failed: ${messages.join(', ')}`, 400);
+    }
+    const lead = new Lead({ userId, ...value });
+    await lead.save();
+    res.status(201).json({ status: 'success', message: 'Lead created', data: { lead } });
+  } catch (err) { next(err); }
+});
 
 

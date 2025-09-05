@@ -4,6 +4,7 @@ const { User } = require('../models/User');
 const { logger } = require('../utils/logger');
 const { AppError } = require('../utils/errorHandler');
 const { Questionnaire, QUESTIONNAIRE_TYPES } = require('../models/Questionnaire');
+const { LEAD_TYPES_LIST } = require('../enums/leadTypes');
 const { authenticateToken, requireAdmin, requireUserOrAdmin } = require('../middleware/auth');
 const { verifySignedThirdPartyForParamUser } = require('../middleware/thirdParty');
 
@@ -93,6 +94,60 @@ class UserController {
         return next(new AppError('Invalid user ID format', 400));
       }
       next(new AppError('Failed to retrieve user knowledge', 500));
+    }
+  }
+
+  async getThirdPartyUserContext(req, res, next) {
+    try {
+      const { id } = req.params;
+
+      if (!id) {
+        return next(new AppError('User ID is required', 400));
+      }
+
+      const userPromise = User.findById(id)
+        .select('firstName lastName professionDescription website')
+        .exec();
+
+      const treatmentPromise = Questionnaire.find({ owner: id, type: QUESTIONNAIRE_TYPES.TREATMENT_PLAN, isActive: true })
+        .select('question answer')
+        .sort({ updatedAt: -1 })
+        .exec();
+
+      const faqPromise = Questionnaire.find({ owner: id, type: QUESTIONNAIRE_TYPES.FAQ, isActive: true })
+        .select('question answer')
+        .sort({ updatedAt: -1 })
+        .exec();
+
+      const [user, treatmentDocs, faqDocs] = await Promise.all([userPromise, treatmentPromise, faqPromise]);
+
+      if (!user) {
+        return next(new AppError('User not found', 404));
+      }
+
+      const treatmentPlans = treatmentDocs.map(d => ({ question: d.question, answer: d.answer }));
+      const faq = faqDocs.map(d => ({ question: d.question, answer: d.answer }));
+
+      res.status(200).json({
+        status: 'success',
+        data: {
+          user: {
+            id: user._id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            professionDescription: user.professionDescription,
+            website: user.website
+          },
+          leadTypes: LEAD_TYPES_LIST,
+          treatmentPlans,
+          faq
+        }
+      });
+    } catch (error) {
+      if (error.name === 'CastError') {
+        return next(new AppError('Invalid user ID format', 400));
+      }
+      next(new AppError('Failed to retrieve user context', 500));
     }
   }
   async getCurrentUser(req, res, next) {
@@ -278,6 +333,7 @@ router.get('/me', authenticateToken, userController.getCurrentUser);
 router.get('/', authenticateToken, requireAdmin, userController.getAllUsers);
 router.get('/public/:id', userController.getPublicUser);
 router.get('/public/:id/knowledge', verifySignedThirdPartyForParamUser, userController.getPublicUserKnowledge);
+router.get('/public/:id/context', verifySignedThirdPartyForParamUser, userController.getThirdPartyUserContext);
 router.get('/:id', authenticateToken, requireUserOrAdmin, userController.getUserById);
 router.put('/:id', authenticateToken, requireUserOrAdmin, userController.updateUser);
 router.delete('/:id', authenticateToken, requireAdmin, userController.deleteUser);
