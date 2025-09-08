@@ -5,6 +5,7 @@ const { logger } = require('../utils/logger');
 const { AppError } = require('../utils/errorHandler');
 const { Questionnaire, QUESTIONNAIRE_TYPES } = require('../models/Questionnaire');
 const { LEAD_TYPES_LIST } = require('../enums/leadTypes');
+const { SERVICES_LIST } = require('../enums/services');
 const { authenticateToken, requireAdmin, requireUserOrAdmin } = require('../middleware/auth');
 const { verifySignedThirdPartyForParamUser } = require('../middleware/thirdParty');
 
@@ -139,6 +140,7 @@ class UserController {
             website: user.website
           },
           leadTypes: LEAD_TYPES_LIST,
+          services: SERVICES_LIST,
           treatmentPlans,
           faq
         }
