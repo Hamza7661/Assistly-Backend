@@ -8,6 +8,9 @@ const leadSchema = new mongoose.Schema({
   title: { type: String, trim: true, required: true, maxlength: 200 },
   summary: { type: String, trim: true, default: '', maxlength: 500 },
   description: { type: String, trim: true, default: '', maxlength: 5000 },
+  leadName: { type: String, trim: true, required: true, maxlength: 150 },
+  leadPhoneNumber: { type: String, trim: true, default: null, maxlength: 50 },
+  leadEmail: { type: String, trim: true, lowercase: true, default: null, maxlength: 200 },
   leadType: { type: String, enum: LEAD_TYPES_VALUES, required: true, index: true },
   serviceType: { type: String, enum: SERVICES_LIST, required: true, index: true },
   leadDateTime: { type: Date, default: Date.now, index: true },
@@ -30,6 +33,9 @@ const leadCreateSchema = Joi.object({
   title: Joi.string().max(200).required(),
   summary: Joi.string().max(500).allow(''),
   description: Joi.string().max(5000).allow(''),
+  leadName: Joi.string().max(150).required(),
+  leadPhoneNumber: Joi.string().max(50).allow(null, ''),
+  leadEmail: Joi.string().email().max(200).allow(null, ''),
   leadType: Joi.string().valid(...LEAD_TYPES_VALUES).required(),
   serviceType: Joi.string().valid(...SERVICES_LIST).required()
 });
@@ -48,6 +54,9 @@ const leadUpdateSchema = Joi.object({
   title: Joi.string().max(200),
   summary: Joi.string().max(500).allow(''),
   description: Joi.string().max(5000).allow(''),
+  leadName: Joi.string().max(150),
+  leadPhoneNumber: Joi.string().max(50).allow(null, ''),
+  leadEmail: Joi.string().email().max(200).allow(null, ''),
   leadType: Joi.string().valid(...LEAD_TYPES_VALUES),
   serviceType: Joi.string().valid(...SERVICES_LIST)
 });
