@@ -7,6 +7,7 @@ const databaseManager = require('./config/database');
 const securityMiddleware = require('./middleware/security');
 const { logger, logRequest } = require('./utils/logger');
 const { globalErrorHandler, notFoundHandler } = require('./utils/errorHandler');
+const cacheManager = require('./utils/cache');
 
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/user');
@@ -19,6 +20,7 @@ const servicesRoutes = require('./routes/services');
 const leadTypesRoutes = require('./routes/leadTypes');
 const leadsRoutes = require('./routes/leads');
 const availabilityRoutes = require('./routes/availability');
+const integrationRoutes = require('./routes/integration');
 
 class Application {
   constructor() {
@@ -65,6 +67,7 @@ class Application {
     this.app.use(`${basePath}/lead-types`, securityMiddleware.getRateLimiters().api, leadTypesRoutes);
     this.app.use(`${basePath}/leads`, securityMiddleware.getRateLimiters().api, leadsRoutes);
     this.app.use(`${basePath}/availability`, securityMiddleware.getRateLimiters().api, availabilityRoutes);
+    this.app.use(`${basePath}/integration`, securityMiddleware.getRateLimiters().api, integrationRoutes);
 
     this.app.get('/', (req, res) => {
       res.json({
@@ -85,6 +88,7 @@ class Application {
   async start() {
     try {
       await databaseManager.connect();
+      await cacheManager.connect();
       
       const server = this.app.listen(this.port, () => {
         logger.info(`🚀 Assistly Backend running on port ${this.port}`);
@@ -115,6 +119,7 @@ class Application {
         
         try {
           await databaseManager.disconnect();
+          await cacheManager.disconnect();
           logger.info('Graceful shutdown completed');
           process.exit(0);
         } catch (error) {

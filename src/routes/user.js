@@ -6,6 +6,8 @@ const { AppError } = require('../utils/errorHandler');
 const { Questionnaire, QUESTIONNAIRE_TYPES } = require('../models/Questionnaire');
 const { LEAD_TYPES_LIST } = require('../enums/leadTypes');
 const { SERVICES_LIST } = require('../enums/services');
+const { Integration } = require('../models/Integration');
+const cacheManager = require('../utils/cache');
 const { authenticateToken, requireAdmin, requireUserOrAdmin } = require('../middleware/auth');
 const { verifySignedThirdPartyForParamUser } = require('../middleware/thirdParty');
 
@@ -106,6 +108,15 @@ class UserController {
         return next(new AppError('User ID is required', 400));
       }
 
+      // Check cache first
+      const cacheKey = cacheManager.getUserContextKey(id);
+      const cachedData = await cacheManager.get(cacheKey);
+      
+      if (cachedData) {
+        logger.info('User context served from cache', { userId: id });
+        return res.status(200).json(cachedData);
+      }
+
       const userPromise = User.findById(id)
         .select('firstName lastName professionDescription website')
         .exec();
@@ -120,7 +131,10 @@ class UserController {
         .sort({ updatedAt: -1 })
         .exec();
 
-      const [user, treatmentDocs, faqDocs] = await Promise.all([userPromise, treatmentPromise, faqPromise]);
+      const integrationPromise = Integration.findOne({ owner: id })
+        .exec();
+
+      const [user, treatmentDocs, faqDocs, integration] = await Promise.all([userPromise, treatmentPromise, faqPromise, integrationPromise]);
 
       if (!user) {
         return next(new AppError('User not found', 404));
@@ -129,7 +143,16 @@ class UserController {
       const treatmentPlans = treatmentDocs.map(d => ({ question: d.question, answer: d.answer }));
       const faq = faqDocs.map(d => ({ question: d.question, answer: d.answer }));
 
-      res.status(200).json({
+      // Prepare integration data
+      const integrationData = integration ? {
+        assistantName: integration.assistantName,
+        greeting: integration.greeting
+      } : {
+        assistantName: 'Assistant',
+        greeting: process.env.DEFAULT_GREETING || 'Hello! How can I help you today?'
+      };
+
+      const responseData = {
         status: 'success',
         data: {
           user: {
@@ -142,9 +165,15 @@ class UserController {
           leadTypes: LEAD_TYPES_LIST,
           services: SERVICES_LIST,
           treatmentPlans,
-          faq
+          faq,
+          integration: integrationData
         }
-      });
+      };
+
+      // Cache the response for 5 minutes
+      await cacheManager.set(cacheKey, responseData, 300);
+
+      res.status(200).json(responseData);
     } catch (error) {
       if (error.name === 'CastError') {
         return next(new AppError('Invalid user ID format', 400));
