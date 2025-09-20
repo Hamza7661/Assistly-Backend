@@ -146,10 +146,14 @@ class UserController {
       // Prepare integration data
       const integrationData = integration ? {
         assistantName: integration.assistantName,
-        greeting: integration.greeting
+        greeting: integration.greeting,
+        validateEmail: integration.validateEmail,
+        validatePhoneNumber: integration.validatePhoneNumber
       } : {
         assistantName: 'Assistant',
-        greeting: process.env.DEFAULT_GREETING || 'Hello! How can I help you today?'
+        greeting: process.env.DEFAULT_GREETING || 'Hello! How can I help you today?',
+        validateEmail: true,
+        validatePhoneNumber: true
       };
 
       const responseData = {

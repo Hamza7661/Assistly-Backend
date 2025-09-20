@@ -3,6 +3,7 @@ const { AppError } = require('../utils/errorHandler');
 const { authenticateToken, requireUserOrAdmin } = require('../middleware/auth');
 const { verifySignedThirdPartyForParamUser } = require('../middleware/thirdParty');
 const { Lead, leadCreateSchema, leadQuerySchema, leadUpdateSchema } = require('../models/Lead');
+const websocketServer = require('../utils/websocketServer');
 
 const router = express.Router();
 
@@ -17,6 +18,25 @@ router.post('/', authenticateToken, requireUserOrAdmin, async (req, res, next) =
     const userId = req.user.id;
     const lead = new Lead({ userId, ...value });
     await lead.save();
+    
+    // Broadcast new lead to user via WebSocket
+    websocketServer.broadcastToUser(userId, {
+      lead: {
+        _id: lead._id,
+        title: lead.title,
+        leadName: lead.leadName,
+        leadEmail: lead.leadEmail,
+        leadPhoneNumber: lead.leadPhoneNumber,
+        leadType: lead.leadType,
+        serviceType: lead.serviceType,
+        summary: lead.summary,
+        description: lead.description,
+        leadDateTime: lead.leadDateTime,
+        createdAt: lead.createdAt,
+        updatedAt: lead.updatedAt
+      }
+    });
+    
     res.status(201).json({ status: 'success', message: 'Lead created', data: { lead } });
   } catch (err) { next(err); }
 });
@@ -133,6 +153,25 @@ router.post('/public/:userId', verifySignedThirdPartyForParamUser, async (req, r
     }
     const lead = new Lead({ userId, ...value });
     await lead.save();
+    
+    // Broadcast new lead to user via WebSocket
+    websocketServer.broadcastToUser(userId, {
+      lead: {
+        _id: lead._id,
+        title: lead.title,
+        leadName: lead.leadName,
+        leadEmail: lead.leadEmail,
+        leadPhoneNumber: lead.leadPhoneNumber,
+        leadType: lead.leadType,
+        serviceType: lead.serviceType,
+        summary: lead.summary,
+        description: lead.description,
+        leadDateTime: lead.leadDateTime,
+        createdAt: lead.createdAt,
+        updatedAt: lead.updatedAt
+      }
+    });
+    
     res.status(201).json({ status: 'success', message: 'Lead created', data: { lead } });
   } catch (err) { next(err); }
 });

@@ -31,7 +31,9 @@ class IntegrationController {
           },
           assistantName: 'Assistant',
           greeting: process.env.DEFAULT_GREETING || 'Hello! How can I help you today?',
-          primaryColor: process.env.DEFAULT_PRIMARY_COLOR || '#3B82F6'
+          primaryColor: process.env.DEFAULT_PRIMARY_COLOR || '#3B82F6',
+          validateEmail: true,
+          validatePhoneNumber: true
         });
         await integration.save();
       } 
@@ -58,6 +60,8 @@ class IntegrationController {
             assistantName: integration.assistantName,
             greeting: integration.greeting,
             primaryColor: integration.primaryColor,
+            validateEmail: integration.validateEmail,
+            validatePhoneNumber: integration.validatePhoneNumber,
             createdAt: integration.createdAt,
             updatedAt: integration.updatedAt
           }
@@ -133,6 +137,8 @@ class IntegrationController {
             assistantName: integration.assistantName,
             greeting: integration.greeting,
             primaryColor: integration.primaryColor,
+            validateEmail: integration.validateEmail,
+            validatePhoneNumber: integration.validatePhoneNumber,
             createdAt: integration.createdAt,
             updatedAt: integration.updatedAt
           }

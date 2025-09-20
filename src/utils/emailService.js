@@ -184,6 +184,54 @@ class EmailService {
   }
 
   /**
+   * Send OTP email for customer validation
+   * @param {Object} userData - User data
+   * @param {string} userData.email - Customer email
+   * @param {string} userData.firstName - Customer first name
+   * @param {string} userData.otp - OTP code
+   * @param {Object} templateData - Template data from frontend
+   * @returns {Promise<Object>} SendGrid response
+   */
+  async sendOtpEmail(userData, templateData) {
+    const { email, firstName, otp } = userData;
+    
+    if (!otp) {
+      throw new Error('OTP code is required');
+    }
+
+    if (!templateData.htmlTemplate) {
+      throw new Error('HTML template is required');
+    }
+
+    // Replace placeholders in HTML content with real data
+    let htmlContent = templateData.htmlTemplate;
+    let textContent = templateData.textContent;
+
+    // Replace OTP placeholders
+    if (htmlContent) {
+      htmlContent = htmlContent
+        .replace(/{{OTP}}/g, otp)
+        .replace(/{{FIRST_NAME}}/g, firstName || 'Customer');
+    }
+
+    if (textContent) {
+      textContent = textContent
+        .replace(/{{OTP}}/g, otp)
+        .replace(/{{FIRST_NAME}}/g, firstName || 'Customer');
+    }
+
+    const emailData = {
+      to: email,
+      subject: process.env.EMAIL_OTP_SUBJECT || 'Your Verification Code - Assistly',
+      htmlContent: htmlContent,
+      textContent: textContent,
+      templateId: templateData.templateId
+    };
+
+    return this.sendEmail(emailData);
+  }
+
+  /**
    * Test email service configuration
    * @returns {Promise<boolean>} True if configuration is valid
    */

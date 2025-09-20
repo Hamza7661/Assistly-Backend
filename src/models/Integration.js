@@ -51,6 +51,14 @@ const integrationSchema = new mongoose.Schema({
       },
       message: 'Primary color must be a valid hex color (e.g., #3B82F6)'
     }
+  },
+  validateEmail: {
+    type: Boolean,
+    default: true
+  },
+  validatePhoneNumber: {
+    type: Boolean,
+    default: true
   }
 }, {
   timestamps: true
@@ -63,13 +71,17 @@ integrationSchema.index({ owner: 1 }, { unique: true });
 const integrationValidationSchema = Joi.object({
   assistantName: Joi.string().max(50).optional(),
   greeting: Joi.string().max(500).optional(),
-  primaryColor: Joi.string().pattern(/^#[0-9A-Fa-f]{6}$/).optional()
+  primaryColor: Joi.string().pattern(/^#[0-9A-Fa-f]{6}$/).optional(),
+  validateEmail: Joi.boolean().optional(),
+  validatePhoneNumber: Joi.boolean().optional()
 });
 
 const integrationUpdateValidationSchema = Joi.object({
   assistantName: Joi.string().max(50).optional(),
   greeting: Joi.string().max(500).optional(),
-  primaryColor: Joi.string().pattern(/^#[0-9A-Fa-f]{6}$/).optional()
+  primaryColor: Joi.string().pattern(/^#[0-9A-Fa-f]{6}$/).optional(),
+  validateEmail: Joi.boolean().optional(),
+  validatePhoneNumber: Joi.boolean().optional()
 }).min(1);
 
 const Integration = mongoose.model('Integration', integrationSchema);

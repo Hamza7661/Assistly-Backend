@@ -8,6 +8,7 @@ const securityMiddleware = require('./middleware/security');
 const { logger, logRequest } = require('./utils/logger');
 const { globalErrorHandler, notFoundHandler } = require('./utils/errorHandler');
 const cacheManager = require('./utils/cache');
+const websocketServer = require('./utils/websocketServer');
 
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/user');
@@ -21,6 +22,7 @@ const leadTypesRoutes = require('./routes/leadTypes');
 const leadsRoutes = require('./routes/leads');
 const availabilityRoutes = require('./routes/availability');
 const integrationRoutes = require('./routes/integration');
+const otpRoutes = require('./routes/otp');
 
 class Application {
   constructor() {
@@ -68,6 +70,7 @@ class Application {
     this.app.use(`${basePath}/leads`, securityMiddleware.getRateLimiters().api, leadsRoutes);
     this.app.use(`${basePath}/availability`, securityMiddleware.getRateLimiters().api, availabilityRoutes);
     this.app.use(`${basePath}/integration`, securityMiddleware.getRateLimiters().api, integrationRoutes);
+    this.app.use(`${basePath}/otp`, securityMiddleware.getRateLimiters().api, otpRoutes);
 
     this.app.get('/', (req, res) => {
       res.json({
@@ -96,6 +99,9 @@ class Application {
         logger.info(`🔗 API Base: ${process.env.API_PREFIX || '/api'}/${process.env.API_VERSION || 'v1'}`);
 
       });
+
+      // Initialize WebSocket server
+      websocketServer.initialize(server);
 
       // Keep-alive timeout: 65 seconds, Headers timeout: 66 seconds (must be > keepAliveTimeout)
       server.keepAliveTimeout = 65000; // 65 seconds
