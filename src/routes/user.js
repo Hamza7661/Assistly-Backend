@@ -170,7 +170,8 @@ class UserController {
           services: SERVICES_LIST,
           treatmentPlans,
           faq,
-          integration: integrationData
+          integration: integrationData,
+          country: process.env.COUNTRY
         }
       };
 
