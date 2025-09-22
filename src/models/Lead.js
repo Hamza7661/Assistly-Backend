@@ -12,7 +12,7 @@ const leadSchema = new mongoose.Schema({
   leadPhoneNumber: { type: String, trim: true, default: null, maxlength: 50 },
   leadEmail: { type: String, trim: true, lowercase: true, default: null, maxlength: 200 },
   leadType: { type: String, enum: LEAD_TYPES_VALUES, required: true, index: true },
-  serviceType: { type: String, enum: SERVICES_LIST, required: true, index: true },
+  serviceType: { type: String, required: true, index: true },
   leadDateTime: { type: Date, default: Date.now, index: true },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
@@ -37,13 +37,13 @@ const leadCreateSchema = Joi.object({
   leadPhoneNumber: Joi.string().max(50).allow(null, ''),
   leadEmail: Joi.string().email().max(200).allow(null, ''),
   leadType: Joi.string().valid(...LEAD_TYPES_VALUES).required(),
-  serviceType: Joi.string().valid(...SERVICES_LIST).required()
+  serviceType: Joi.string().required()
 });
 
 const leadQuerySchema = Joi.object({
   q: Joi.string().max(200).optional(),
   leadType: Joi.string().valid(...LEAD_TYPES_VALUES).optional(),
-  serviceType: Joi.string().valid(...SERVICES_LIST).optional(),
+  serviceType: Joi.string().optional(),
   sortBy: Joi.string().valid('leadDateTime', 'createdAt', 'updatedAt', 'title').default('leadDateTime'),
   sortOrder: Joi.string().valid('asc', 'desc').default('desc'),
   page: Joi.number().integer().min(1).default(1),
@@ -58,7 +58,7 @@ const leadUpdateSchema = Joi.object({
   leadPhoneNumber: Joi.string().max(50).allow(null, ''),
   leadEmail: Joi.string().email().max(200).allow(null, ''),
   leadType: Joi.string().valid(...LEAD_TYPES_VALUES),
-  serviceType: Joi.string().valid(...SERVICES_LIST)
+  serviceType: Joi.string()
 });
 
 module.exports = {
