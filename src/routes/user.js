@@ -186,6 +186,95 @@ class UserController {
       next(new AppError('Failed to retrieve user context', 500));
     }
   }
+
+  async getUserContextByTwilioNumber(req, res, next) {
+    try {
+      const { twilioPhoneNumber } = req.params;
+
+      if (!twilioPhoneNumber) {
+        return next(new AppError('Twilio phone number is required', 400));
+      }
+
+      // First, find the user by Twilio phone number
+      const user = await User.findByTwilioPhone(twilioPhoneNumber)
+        .select('_id firstName lastName professionDescription website')
+        .exec();
+
+      if (!user) {
+        return next(new AppError('User not found with this Twilio phone number', 404));
+      }
+
+      const userId = user._id;
+
+      // Check cache first
+      const cacheKey = cacheManager.getUserContextKey(userId);
+      const cachedData = await cacheManager.get(cacheKey);
+      
+      if (cachedData) {
+        logger.info('User context served from cache (by Twilio number)', { twilioPhoneNumber, userId });
+        return res.status(200).json(cachedData);
+      }
+
+      const treatmentPromise = Questionnaire.find({ owner: userId, type: QUESTIONNAIRE_TYPES.TREATMENT_PLAN, isActive: true })
+        .select('question answer')
+        .sort({ updatedAt: -1 })
+        .exec();
+
+      const faqPromise = Questionnaire.find({ owner: userId, type: QUESTIONNAIRE_TYPES.FAQ, isActive: true })
+        .select('question answer')
+        .sort({ updatedAt: -1 })
+        .exec();
+
+      const integrationPromise = Integration.findOne({ owner: userId })
+        .exec();
+
+      const [treatmentDocs, faqDocs, integration] = await Promise.all([treatmentPromise, faqPromise, integrationPromise]);
+
+      const treatmentPlans = treatmentDocs.map(d => ({ question: d.question, answer: d.answer }));
+      const faq = faqDocs.map(d => ({ question: d.question, answer: d.answer }));
+
+      // Prepare integration data
+      const integrationData = integration ? {
+        assistantName: integration.assistantName,
+        greeting: integration.greeting,
+        validateEmail: integration.validateEmail,
+        validatePhoneNumber: integration.validatePhoneNumber
+      } : {
+        assistantName: 'Assistant',
+        greeting: process.env.DEFAULT_GREETING || 'Hello! How can I help you today?',
+        validateEmail: true,
+        validatePhoneNumber: true
+      };
+
+      const responseData = {
+        status: 'success',
+        data: {
+          user: {
+            id: user._id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            professionDescription: user.professionDescription,
+            website: user.website
+          },
+          leadTypes: LEAD_TYPES_LIST,
+          services: SERVICES_LIST,
+          treatmentPlans,
+          faq,
+          integration: integrationData,
+          country: process.env.COUNTRY
+        }
+      };
+
+      // Cache the response for 5 minutes
+      await cacheManager.set(cacheKey, responseData, 300);
+
+      logger.info('User context retrieved by Twilio phone number', { twilioPhoneNumber, userId });
+
+      res.status(200).json(responseData);
+    } catch (error) {
+      next(new AppError('Failed to retrieve user context by Twilio phone number', 500));
+    }
+  }
   async getCurrentUser(req, res, next) {
     try {
       const userId = req.user.id;
@@ -274,6 +363,35 @@ class UserController {
     }
   }
 
+  async getUserByTwilioNumber(req, res, next) {
+    try {
+      const { twilioPhoneNumber } = req.params;
+
+      if (!twilioPhoneNumber) {
+        return next(new AppError('Twilio phone number is required', 400));
+      }
+
+      const user = await User.findByTwilioPhone(twilioPhoneNumber)
+        .select('-password -refreshToken')
+        .populate('package', 'name price limits features type');
+
+      if (!user) {
+        return next(new AppError('User not found with this Twilio phone number', 404));
+      }
+
+      logger.info('Retrieved user by Twilio phone number', { twilioPhoneNumber });
+
+      res.status(200).json({
+        status: 'success',
+        data: {
+          user
+        }
+      });
+    } catch (error) {
+      next(new AppError('Failed to retrieve user by Twilio phone number', 500));
+    }
+  }
+
   async updateUser(req, res, next) {
     try {
       const { id } = req.params;
@@ -283,7 +401,7 @@ class UserController {
         return next(new AppError('User ID is required', 400));
       }
 
-      const allowedUpdates = ['firstName', 'lastName', 'phoneNumber', 'email', 'profession', 'professionDescription', 'package', 'website'];
+      const allowedUpdates = ['firstName', 'lastName', 'phoneNumber', 'email', 'profession', 'professionDescription', 'package', 'website', 'twilioPhoneNumber'];
       const filteredUpdates = {};
 
       Object.keys(updateData).forEach(key => {
@@ -370,6 +488,8 @@ router.get('/', authenticateToken, requireAdmin, userController.getAllUsers);
 router.get('/public/:id', userController.getPublicUser);
 router.get('/public/:id/knowledge', verifySignedThirdPartyForParamUser, userController.getPublicUserKnowledge);
 router.get('/public/:id/context', verifySignedThirdPartyForParamUser, userController.getThirdPartyUserContext);
+router.get('/by-twilio/:twilioPhoneNumber', verifySignedThirdPartyForParamUser, userController.getUserByTwilioNumber);
+router.get('/by-twilio/:twilioPhoneNumber/context', verifySignedThirdPartyForParamUser, userController.getUserContextByTwilioNumber);
 router.get('/:id', authenticateToken, requireUserOrAdmin, userController.getUserById);
 router.put('/:id', authenticateToken, requireUserOrAdmin, userController.updateUser);
 router.delete('/:id', authenticateToken, requireAdmin, userController.deleteUser);

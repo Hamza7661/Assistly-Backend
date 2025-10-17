@@ -41,6 +41,19 @@ const userSchema = new mongoose.Schema({
       message: 'Please enter a valid phone number with at least 10 digits'
     }
   },
+  twilioPhoneNumber: {
+    type: String,
+    trim: true,
+    default: null,
+    validate: {
+      validator: function(v) {
+        if (!v) return true; // Allow null/empty
+        const digitsOnly = v.replace(/[\s\-\(\)]/g, '');
+        return /^\+?[\d\s\-\(\)\s]+$/.test(v) && digitsOnly.length >= 10;
+      },
+      message: 'Please enter a valid Twilio phone number with at least 10 digits'
+    }
+  },
   email: {
     type: String,
     required: [true, 'Email is required'],
@@ -232,6 +245,7 @@ userSchema.virtual('isLocked').get(function() {
 
 userSchema.index({ email: 1 }, { unique: true, sparse: true });
 userSchema.index({ phoneNumber: 1 }, { unique: true, sparse: true });
+userSchema.index({ twilioPhoneNumber: 1 }, { unique: true, sparse: true }); // sparse: true allows multiple null values
 userSchema.index({ package: 1 });
 userSchema.index({ createdAt: -1 });
 userSchema.index({ isActive: 1 });
@@ -311,6 +325,10 @@ userSchema.statics.findByEmail = function(email) {
 
 userSchema.statics.findByPhone = function(phoneNumber) {
   return this.findOne({ phoneNumber });
+};
+
+userSchema.statics.findByTwilioPhone = function(twilioPhoneNumber) {
+  return this.findOne({ twilioPhoneNumber });
 };
 
 userSchema.statics.findActiveUsers = function() {
@@ -426,6 +444,23 @@ const userUpdateValidationSchema = Joi.object({
   professionDescription: Joi.string()
     .min(1)
     .max(300),
+  
+  twilioPhoneNumber: Joi.string()
+    .pattern(/^\+?[\d\s\-\(\)\s]+$/)
+    .custom((value, helpers) => {
+      if (!value) return value; // Allow empty
+      const digitsOnly = value.replace(/[\s\-\(\)]/g, '');
+      if (digitsOnly.length < 10) {
+        return helpers.error('any.invalid');
+      }
+      return value;
+    })
+    .allow(null, '')
+    .optional()
+    .messages({
+      'string.pattern.base': 'Please enter a valid Twilio phone number',
+      'any.invalid': 'Twilio phone number must be at least 10 digits'
+    }),
   
   package: Joi.string()
     .optional(),
