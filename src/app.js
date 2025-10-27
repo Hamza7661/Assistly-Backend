@@ -23,6 +23,7 @@ const leadsRoutes = require('./routes/leads');
 const availabilityRoutes = require('./routes/availability');
 const integrationRoutes = require('./routes/integration');
 const otpRoutes = require('./routes/otp');
+const chatbotWorkflowRoutes = require('./routes/chatbotWorkflow');
 
 class Application {
   constructor() {
@@ -71,6 +72,7 @@ class Application {
     this.app.use(`${basePath}/availability`, securityMiddleware.getRateLimiters().api, availabilityRoutes);
     this.app.use(`${basePath}/integration`, securityMiddleware.getRateLimiters().api, integrationRoutes);
     this.app.use(`${basePath}/otp`, securityMiddleware.getRateLimiters().api, otpRoutes);
+    this.app.use(`${basePath}/chatbot-workflows`, securityMiddleware.getRateLimiters().api, chatbotWorkflowRoutes);
 
     this.app.get('/', (req, res) => {
       res.json({

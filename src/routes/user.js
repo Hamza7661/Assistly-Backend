@@ -134,7 +134,13 @@ class UserController {
       const integrationPromise = Integration.findOne({ owner: id })
         .exec();
 
-      const [user, treatmentDocs, faqDocs, integration] = await Promise.all([userPromise, treatmentPromise, faqPromise, integrationPromise]);
+      const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
+      const workflowPromise = ChatbotWorkflow.find({ owner: id, isActive: true })
+        .select('title question questionType options isRoot order')
+        .sort({ order: 1, createdAt: 1 })
+        .exec();
+
+      const [user, treatmentDocs, faqDocs, integration, workflowDocs] = await Promise.all([userPromise, treatmentPromise, faqPromise, integrationPromise, workflowPromise]);
 
       if (!user) {
         return next(new AppError('User not found', 404));
@@ -142,6 +148,16 @@ class UserController {
 
       const treatmentPlans = treatmentDocs.map(d => ({ question: d.question, answer: d.answer }));
       const faq = faqDocs.map(d => ({ question: d.question, answer: d.answer }));
+
+      const workflows = workflowDocs.map(w => ({
+        _id: w._id,
+        title: w.title,
+        question: w.question,
+        questionType: w.questionType,
+        options: w.options,
+        isRoot: w.isRoot,
+        order: w.order
+      }));
 
       // Prepare integration data
       const integrationData = integration ? {
@@ -171,6 +187,7 @@ class UserController {
           treatmentPlans,
           faq,
           integration: integrationData,
+          workflows,
           country: process.env.COUNTRY
         }
       };
@@ -228,10 +245,26 @@ class UserController {
       const integrationPromise = Integration.findOne({ owner: userId })
         .exec();
 
-      const [treatmentDocs, faqDocs, integration] = await Promise.all([treatmentPromise, faqPromise, integrationPromise]);
+      const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
+      const workflowPromise = ChatbotWorkflow.find({ owner: userId, isActive: true })
+        .select('title question questionType options isRoot order')
+        .sort({ order: 1, createdAt: 1 })
+        .exec();
+
+      const [treatmentDocs, faqDocs, integration, workflowDocs] = await Promise.all([treatmentPromise, faqPromise, integrationPromise, workflowPromise]);
 
       const treatmentPlans = treatmentDocs.map(d => ({ question: d.question, answer: d.answer }));
       const faq = faqDocs.map(d => ({ question: d.question, answer: d.answer }));
+
+      const workflows = workflowDocs.map(w => ({
+        _id: w._id,
+        title: w.title,
+        question: w.question,
+        questionType: w.questionType,
+        options: w.options,
+        isRoot: w.isRoot,
+        order: w.order
+      }));
 
       // Prepare integration data
       const integrationData = integration ? {
@@ -261,6 +294,7 @@ class UserController {
           treatmentPlans,
           faq,
           integration: integrationData,
+          workflows,
           country: process.env.COUNTRY
         }
       };
