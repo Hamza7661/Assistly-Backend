@@ -32,6 +32,12 @@ const chatbotWorkflowSchema = new mongoose.Schema({
     required: true,
     index: true
   },
+  workflowGroupId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'ChatbotWorkflow',
+    default: null,
+    index: true
+  },
   title: {
     type: String,
     required: true,
@@ -76,6 +82,7 @@ const chatbotWorkflowSchema = new mongoose.Schema({
 // Indexes
 chatbotWorkflowSchema.index({ owner: 1, isActive: 1, isRoot: 1 });
 chatbotWorkflowSchema.index({ owner: 1, order: 1 });
+chatbotWorkflowSchema.index({ owner: 1, workflowGroupId: 1 });
 
 chatbotWorkflowSchema.pre('save', function(next) {
   this.updatedAt = new Date();
@@ -97,6 +104,7 @@ const workflowValidationSchema = Joi.object({
   question: Joi.string().max(500).required(),
   questionType: Joi.string().valid('single_choice', 'multiple_choice', 'text_input', 'number_input', 'email_input', 'phone_input').optional(),
   options: Joi.array().items(workflowOptionValidationSchema).optional(),
+  workflowGroupId: Joi.string().allow(null, '').optional(),
   isRoot: Joi.boolean().optional(),
   isActive: Joi.boolean().optional(),
   order: Joi.number().optional()
@@ -107,6 +115,7 @@ const workflowUpdateValidationSchema = Joi.object({
   question: Joi.string().max(500),
   questionType: Joi.string().valid('single_choice', 'multiple_choice', 'text_input', 'number_input', 'email_input', 'phone_input'),
   options: Joi.array().items(workflowOptionValidationSchema),
+  workflowGroupId: Joi.string().allow(null, ''),
   isRoot: Joi.boolean(),
   isActive: Joi.boolean(),
   order: Joi.number()

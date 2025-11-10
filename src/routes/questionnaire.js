@@ -19,7 +19,17 @@ router.put('/', authenticateToken, requireUserOrAdmin, async (req, res, next) =>
     await Questionnaire.deleteMany({ owner: ownerId, type });
     let inserted = [];
     if (Array.isArray(items) && items.length > 0) {
-      inserted = await Questionnaire.insertMany(items.map(i => ({ owner: ownerId, type, question: i.question, answer: i.answer, isActive: true })));
+      inserted = await Questionnaire.insertMany(items.map(i => ({
+        owner: ownerId,
+        type,
+        question: i.question,
+        answer: i.answer,
+        attachedWorkflows: (i.attachedWorkflows || []).map(aw => ({
+          workflowId: aw.workflowId || null,
+          order: aw.order || 0
+        })),
+        isActive: true
+      })));
     }
     logger.info('Questionnaire list replaced (self)', { ownerId, type, count: inserted.length });
     res.status(200).json({ status: 'success', message: 'Questionnaire updated', data: { count: inserted.length } });
@@ -33,7 +43,7 @@ router.get('/', authenticateToken, requireUserOrAdmin, async (req, res, next) =>
     const filter = { owner: req.user.id };
     if (type) filter.type = parseInt(type);
     if (!includeInactive) filter.isActive = true;
-    const items = await Questionnaire.find(filter).sort({ updatedAt: -1 }).exec();
+    const items = await Questionnaire.find(filter).populate('attachedWorkflows.workflowId', '_id title question questionType options isRoot isActive order').sort({ updatedAt: -1 }).exec();
     res.status(200).json({ status: 'success', data: { items, count: items.length } });
   } catch (err) { next(err); }
 });
@@ -54,7 +64,17 @@ router.put('/user/:ownerId', authenticateToken, requireUserOrAdmin, async (req, 
     await Questionnaire.deleteMany({ owner: ownerId, type });
     let inserted = [];
     if (Array.isArray(items) && items.length > 0) {
-      inserted = await Questionnaire.insertMany(items.map(i => ({ owner: ownerId, type, question: i.question, answer: i.answer, isActive: true })));
+      inserted = await Questionnaire.insertMany(items.map(i => ({
+        owner: ownerId,
+        type,
+        question: i.question,
+        answer: i.answer,
+        attachedWorkflows: (i.attachedWorkflows || []).map(aw => ({
+          workflowId: aw.workflowId || null,
+          order: aw.order || 0
+        })),
+        isActive: true
+      })));
     }
     logger.info('Questionnaire list replaced', { ownerId, type, count: inserted.length });
     res.status(200).json({ status: 'success', message: 'Questionnaire updated', data: { count: inserted.length } });

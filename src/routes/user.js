@@ -122,7 +122,8 @@ class UserController {
         .exec();
 
       const treatmentPromise = Questionnaire.find({ owner: id, type: QUESTIONNAIRE_TYPES.TREATMENT_PLAN, isActive: true })
-        .select('question answer')
+        .select('question answer attachedWorkflows')
+        .populate('attachedWorkflows.workflowId', 'title question questionType options isRoot order')
         .sort({ updatedAt: -1 })
         .exec();
 
@@ -146,7 +147,26 @@ class UserController {
         return next(new AppError('User not found', 404));
       }
 
-      const treatmentPlans = treatmentDocs.map(d => ({ question: d.question, answer: d.answer }));
+      const treatmentPlans = treatmentDocs.map(d => ({
+        question: d.question,
+        answer: d.answer,
+        attachedWorkflows: (d.attachedWorkflows || [])
+          .filter(aw => aw.workflowId)
+          .sort((a, b) => (a.order || 0) - (b.order || 0))
+          .map(aw => ({
+            workflowId: aw.workflowId._id || aw.workflowId,
+            order: aw.order || 0,
+            workflow: aw.workflowId ? {
+              _id: aw.workflowId._id,
+              title: aw.workflowId.title,
+              question: aw.workflowId.question,
+              questionType: aw.workflowId.questionType,
+              options: aw.workflowId.options,
+              isRoot: aw.workflowId.isRoot,
+              order: aw.workflowId.order
+            } : null
+          }))
+      }));
       const faq = faqDocs.map(d => ({ question: d.question, answer: d.answer }));
 
       const workflows = workflowDocs.map(w => ({
@@ -233,7 +253,8 @@ class UserController {
       }
 
       const treatmentPromise = Questionnaire.find({ owner: userId, type: QUESTIONNAIRE_TYPES.TREATMENT_PLAN, isActive: true })
-        .select('question answer')
+        .select('question answer attachedWorkflows')
+        .populate('attachedWorkflows.workflowId', 'title question questionType options isRoot order')
         .sort({ updatedAt: -1 })
         .exec();
 
@@ -253,7 +274,26 @@ class UserController {
 
       const [treatmentDocs, faqDocs, integration, workflowDocs] = await Promise.all([treatmentPromise, faqPromise, integrationPromise, workflowPromise]);
 
-      const treatmentPlans = treatmentDocs.map(d => ({ question: d.question, answer: d.answer }));
+      const treatmentPlans = treatmentDocs.map(d => ({
+        question: d.question,
+        answer: d.answer,
+        attachedWorkflows: (d.attachedWorkflows || [])
+          .filter(aw => aw.workflowId)
+          .sort((a, b) => (a.order || 0) - (b.order || 0))
+          .map(aw => ({
+            workflowId: aw.workflowId._id || aw.workflowId,
+            order: aw.order || 0,
+            workflow: aw.workflowId ? {
+              _id: aw.workflowId._id,
+              title: aw.workflowId.title,
+              question: aw.workflowId.question,
+              questionType: aw.workflowId.questionType,
+              options: aw.workflowId.options,
+              isRoot: aw.workflowId.isRoot,
+              order: aw.workflowId.order
+            } : null
+          }))
+      }));
       const faq = faqDocs.map(d => ({ question: d.question, answer: d.answer }));
 
       const workflows = workflowDocs.map(w => ({

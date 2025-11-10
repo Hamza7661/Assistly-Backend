@@ -30,6 +30,17 @@ const questionnaireSchema = new mongoose.Schema({
     minlength: 1,
     maxlength: 10000
   },
+  // For treatment plans: attached workflow IDs with ordering
+  attachedWorkflows: [{
+    workflowId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'ChatbotWorkflow'
+    },
+    order: {
+      type: Number,
+      default: 0
+    }
+  }],
   isActive: {
     type: Boolean,
     default: true,
@@ -77,7 +88,13 @@ const questionnaireArraySchema = Joi.object({
   items: Joi.array().items(
     Joi.object({
       question: Joi.string().min(3).max(500).required(),
-      answer: Joi.string().min(1).max(10000).required()
+      answer: Joi.string().min(1).max(10000).required(),
+      attachedWorkflows: Joi.array().items(
+        Joi.object({
+          workflowId: Joi.string().allow(null, ''),
+          order: Joi.number().default(0)
+        })
+      ).optional()
     })
   ).required()
 });
