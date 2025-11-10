@@ -52,8 +52,8 @@ const chatbotWorkflowSchema = new mongoose.Schema({
   },
   questionType: {
     type: String,
-    enum: ['single_choice', 'multiple_choice', 'text_input', 'number_input', 'email_input', 'phone_input'],
-    default: 'single_choice'
+    enum: ['single_choice', 'multiple_choice', 'text_response'],
+    default: 'text_response'
   },
   options: [workflowOptionSchema],
   isRoot: {
@@ -102,8 +102,8 @@ const workflowOptionValidationSchema = Joi.object({
 const workflowValidationSchema = Joi.object({
   title: Joi.string().max(200).required(),
   question: Joi.string().max(500).required(),
-  questionType: Joi.string().valid('single_choice', 'multiple_choice', 'text_input', 'number_input', 'email_input', 'phone_input').optional(),
-  options: Joi.array().items(workflowOptionValidationSchema).optional(),
+  questionType: Joi.string().valid('single_choice', 'multiple_choice', 'text_response').default('text_response'),
+  options: Joi.array().items(workflowOptionValidationSchema).default([]),
   workflowGroupId: Joi.string().allow(null, '').optional(),
   isRoot: Joi.boolean().optional(),
   isActive: Joi.boolean().optional(),
@@ -111,14 +111,14 @@ const workflowValidationSchema = Joi.object({
 });
 
 const workflowUpdateValidationSchema = Joi.object({
-  title: Joi.string().max(200),
-  question: Joi.string().max(500),
-  questionType: Joi.string().valid('single_choice', 'multiple_choice', 'text_input', 'number_input', 'email_input', 'phone_input'),
-  options: Joi.array().items(workflowOptionValidationSchema),
-  workflowGroupId: Joi.string().allow(null, ''),
-  isRoot: Joi.boolean(),
-  isActive: Joi.boolean(),
-  order: Joi.number()
+  title: Joi.string().max(200).optional(),
+  question: Joi.string().max(500).optional(),
+  questionType: Joi.string().valid('single_choice', 'multiple_choice', 'text_response').default('text_response'),
+  options: Joi.array().items(workflowOptionValidationSchema).default([]),
+  workflowGroupId: Joi.string().allow(null, '').optional(),
+  isRoot: Joi.boolean().optional(),
+  isActive: Joi.boolean().optional(),
+  order: Joi.number().optional()
 });
 
 const workflowReplaceArraySchema = Joi.object({

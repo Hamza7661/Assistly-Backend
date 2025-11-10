@@ -136,8 +136,8 @@ class UserController {
         .exec();
 
       const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
-      const workflowPromise = ChatbotWorkflow.find({ owner: id, isActive: true })
-        .select('title question questionType options isRoot order workflowGroupId')
+      const workflowPromise = ChatbotWorkflow.find({ owner: id })
+        .select('title question questionType options isRoot order workflowGroupId isActive')
         .sort({ order: 1, createdAt: 1 })
         .exec();
 
@@ -182,7 +182,8 @@ class UserController {
           options: w.options,
           isRoot: w.isRoot,
           order: w.order,
-          workflowGroupId: w.workflowGroupId
+          workflowGroupId: w.workflowGroupId,
+          isActive: w.isActive
         };
         
         if (w.isRoot || !w.workflowGroupId) {
@@ -212,6 +213,7 @@ class UserController {
                 isRoot: rootWorkflow.isRoot,
                 order: rootWorkflow.order,
                 workflowGroupId: rootWorkflow.workflowGroupId,
+                isActive: rootWorkflow.isActive,
                 questions: []
               };
               rootWorkflows.push(workflowMap[groupId]);
@@ -221,10 +223,11 @@ class UserController {
                 _id: groupId,
                 title: 'Unnamed Workflow',
                 question: '',
-                questionType: 'single_choice',
+                questionType: 'text_response',
                 options: [],
                 isRoot: true,
                 order: 0,
+                isActive: true,
                 questions: []
               };
             }
@@ -233,10 +236,19 @@ class UserController {
         }
       });
       
-      // Sort questions within each workflow by order
+      // Sort questions within each workflow by order and filter out inactive questions
       rootWorkflows.forEach(workflow => {
         if (workflow.questions) {
-          workflow.questions.sort((a, b) => (a.order || 0) - (b.order || 0));
+          workflow.questions = workflow.questions
+            .filter(q => q.isActive !== false) // Only include active questions
+            .sort((a, b) => (a.order || 0) - (b.order || 0));
+        }
+        // Also filter out inactive root workflows
+        if (workflow.isActive === false) {
+          const index = rootWorkflows.indexOf(workflow);
+          if (index > -1) {
+            rootWorkflows.splice(index, 1);
+          }
         }
       });
       
@@ -330,8 +342,8 @@ class UserController {
         .exec();
 
       const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
-      const workflowPromise = ChatbotWorkflow.find({ owner: userId, isActive: true })
-        .select('title question questionType options isRoot order workflowGroupId')
+      const workflowPromise = ChatbotWorkflow.find({ owner: userId })
+        .select('title question questionType options isRoot order workflowGroupId isActive')
         .sort({ order: 1, createdAt: 1 })
         .exec();
 
@@ -372,7 +384,8 @@ class UserController {
           options: w.options,
           isRoot: w.isRoot,
           order: w.order,
-          workflowGroupId: w.workflowGroupId
+          workflowGroupId: w.workflowGroupId,
+          isActive: w.isActive
         };
         
         if (w.isRoot || !w.workflowGroupId) {
@@ -402,6 +415,7 @@ class UserController {
                 isRoot: rootWorkflow.isRoot,
                 order: rootWorkflow.order,
                 workflowGroupId: rootWorkflow.workflowGroupId,
+                isActive: rootWorkflow.isActive,
                 questions: []
               };
               rootWorkflows.push(workflowMap[groupId]);
@@ -411,10 +425,11 @@ class UserController {
                 _id: groupId,
                 title: 'Unnamed Workflow',
                 question: '',
-                questionType: 'single_choice',
+                questionType: 'text_response',
                 options: [],
                 isRoot: true,
                 order: 0,
+                isActive: true,
                 questions: []
               };
             }
@@ -423,10 +438,19 @@ class UserController {
         }
       });
       
-      // Sort questions within each workflow by order
+      // Sort questions within each workflow by order and filter out inactive questions
       rootWorkflows.forEach(workflow => {
         if (workflow.questions) {
-          workflow.questions.sort((a, b) => (a.order || 0) - (b.order || 0));
+          workflow.questions = workflow.questions
+            .filter(q => q.isActive !== false) // Only include active questions
+            .sort((a, b) => (a.order || 0) - (b.order || 0));
+        }
+        // Also filter out inactive root workflows
+        if (workflow.isActive === false) {
+          const index = rootWorkflows.indexOf(workflow);
+          if (index > -1) {
+            rootWorkflows.splice(index, 1);
+          }
         }
       });
       
