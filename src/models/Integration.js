@@ -47,9 +47,10 @@ const integrationSchema = new mongoose.Schema({
     default: process.env.DEFAULT_PRIMARY_COLOR || '#3B82F6',
     validate: {
       validator: function(v) {
+        if (!v || v === '') return true; // Allow empty strings
         return /^#[0-9A-Fa-f]{6}$/.test(v);
       },
-      message: 'Primary color must be a valid hex color (e.g., #3B82F6)'
+      message: 'Primary color must be a valid hex color (e.g., #3B82F6) or empty'
     }
   },
   validateEmail: {
@@ -69,17 +70,29 @@ integrationSchema.index({ owner: 1 }, { unique: true });
 
 // Joi validation schemas
 const integrationValidationSchema = Joi.object({
-  assistantName: Joi.string().max(50).optional(),
-  greeting: Joi.string().max(500).optional(),
-  primaryColor: Joi.string().pattern(/^#[0-9A-Fa-f]{6}$/).optional(),
+  assistantName: Joi.string().max(50).allow('', null).optional(),
+  greeting: Joi.string().max(500).allow('', null).optional(),
+  primaryColor: Joi.string().allow('', null).custom((value, helpers) => {
+    if (!value || value === '') return value; // Allow empty strings
+    if (/^#[0-9A-Fa-f]{6}$/.test(value)) return value; // Valid hex color
+    return helpers.error('string.pattern.base');
+  }).optional().messages({
+    'string.pattern.base': 'Primary color must be a valid hex color (e.g., #3B82F6) or empty'
+  }),
   validateEmail: Joi.boolean().optional(),
   validatePhoneNumber: Joi.boolean().optional()
 });
 
 const integrationUpdateValidationSchema = Joi.object({
-  assistantName: Joi.string().max(50).optional(),
-  greeting: Joi.string().max(500).optional(),
-  primaryColor: Joi.string().pattern(/^#[0-9A-Fa-f]{6}$/).optional(),
+  assistantName: Joi.string().max(50).allow('', null).optional(),
+  greeting: Joi.string().max(500).allow('', null).optional(),
+  primaryColor: Joi.string().allow('', null).custom((value, helpers) => {
+    if (!value || value === '') return value; // Allow empty strings
+    if (/^#[0-9A-Fa-f]{6}$/.test(value)) return value; // Valid hex color
+    return helpers.error('string.pattern.base');
+  }).optional().messages({
+    'string.pattern.base': 'Primary color must be a valid hex color (e.g., #3B82F6) or empty'
+  }),
   validateEmail: Joi.boolean().optional(),
   validatePhoneNumber: Joi.boolean().optional()
 }).min(1);

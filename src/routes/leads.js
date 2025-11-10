@@ -31,6 +31,7 @@ router.post('/', authenticateToken, requireUserOrAdmin, async (req, res, next) =
         serviceType: lead.serviceType,
         summary: lead.summary,
         description: lead.description,
+        history: lead.history,
         leadDateTime: lead.leadDateTime,
         createdAt: lead.createdAt,
         updatedAt: lead.updatedAt
@@ -166,6 +167,7 @@ router.post('/public/:userId', verifySignedThirdPartyForParamUser, async (req, r
         serviceType: lead.serviceType,
         summary: lead.summary,
         description: lead.description,
+        history: lead.history,
         leadDateTime: lead.leadDateTime,
         createdAt: lead.createdAt,
         updatedAt: lead.updatedAt
