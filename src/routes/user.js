@@ -137,7 +137,7 @@ class UserController {
 
       const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
       const workflowPromise = ChatbotWorkflow.find({ owner: id, isActive: true })
-        .select('title question questionType options isRoot order')
+        .select('title question questionType options isRoot order workflowGroupId')
         .sort({ order: 1, createdAt: 1 })
         .exec();
 
@@ -169,15 +169,78 @@ class UserController {
       }));
       const faq = faqDocs.map(d => ({ question: d.question, answer: d.answer }));
 
-      const workflows = workflowDocs.map(w => ({
-        _id: w._id,
-        title: w.title,
-        question: w.question,
-        questionType: w.questionType,
-        options: w.options,
-        isRoot: w.isRoot,
-        order: w.order
-      }));
+      // Group workflows by workflowGroupId and include ordered questions
+      const workflowMap = {};
+      const rootWorkflows = [];
+      
+      workflowDocs.forEach(w => {
+        const workflowData = {
+          _id: w._id,
+          title: w.title,
+          question: w.question,
+          questionType: w.questionType,
+          options: w.options,
+          isRoot: w.isRoot,
+          order: w.order,
+          workflowGroupId: w.workflowGroupId
+        };
+        
+        if (w.isRoot || !w.workflowGroupId) {
+          // This is a root workflow
+          const groupId = w._id.toString();
+          workflowMap[groupId] = {
+            ...workflowData,
+            questions: [] // Will contain ordered questions
+          };
+          rootWorkflows.push(workflowMap[groupId]);
+        } else {
+          // This is a question within a workflow
+          const groupId = w.workflowGroupId ? w.workflowGroupId.toString() : w._id.toString();
+          if (!workflowMap[groupId]) {
+            // Find the root workflow for this group
+            const rootWorkflow = workflowDocs.find(rw => 
+              (rw._id.toString() === groupId && rw.isRoot) || 
+              (rw.workflowGroupId && rw.workflowGroupId.toString() === groupId && rw.isRoot)
+            );
+            if (rootWorkflow) {
+              workflowMap[groupId] = {
+                _id: rootWorkflow._id,
+                title: rootWorkflow.title,
+                question: rootWorkflow.question,
+                questionType: rootWorkflow.questionType,
+                options: rootWorkflow.options,
+                isRoot: rootWorkflow.isRoot,
+                order: rootWorkflow.order,
+                workflowGroupId: rootWorkflow.workflowGroupId,
+                questions: []
+              };
+              rootWorkflows.push(workflowMap[groupId]);
+            } else {
+              // Create a placeholder if root not found
+              workflowMap[groupId] = {
+                _id: groupId,
+                title: 'Unnamed Workflow',
+                question: '',
+                questionType: 'single_choice',
+                options: [],
+                isRoot: true,
+                order: 0,
+                questions: []
+              };
+            }
+          }
+          workflowMap[groupId].questions.push(workflowData);
+        }
+      });
+      
+      // Sort questions within each workflow by order
+      rootWorkflows.forEach(workflow => {
+        if (workflow.questions) {
+          workflow.questions.sort((a, b) => (a.order || 0) - (b.order || 0));
+        }
+      });
+      
+      const workflows = rootWorkflows;
 
       // Prepare integration data
       const integrationData = integration ? {
@@ -268,7 +331,7 @@ class UserController {
 
       const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
       const workflowPromise = ChatbotWorkflow.find({ owner: userId, isActive: true })
-        .select('title question questionType options isRoot order')
+        .select('title question questionType options isRoot order workflowGroupId')
         .sort({ order: 1, createdAt: 1 })
         .exec();
 
@@ -296,15 +359,78 @@ class UserController {
       }));
       const faq = faqDocs.map(d => ({ question: d.question, answer: d.answer }));
 
-      const workflows = workflowDocs.map(w => ({
-        _id: w._id,
-        title: w.title,
-        question: w.question,
-        questionType: w.questionType,
-        options: w.options,
-        isRoot: w.isRoot,
-        order: w.order
-      }));
+      // Group workflows by workflowGroupId and include ordered questions
+      const workflowMap = {};
+      const rootWorkflows = [];
+      
+      workflowDocs.forEach(w => {
+        const workflowData = {
+          _id: w._id,
+          title: w.title,
+          question: w.question,
+          questionType: w.questionType,
+          options: w.options,
+          isRoot: w.isRoot,
+          order: w.order,
+          workflowGroupId: w.workflowGroupId
+        };
+        
+        if (w.isRoot || !w.workflowGroupId) {
+          // This is a root workflow
+          const groupId = w._id.toString();
+          workflowMap[groupId] = {
+            ...workflowData,
+            questions: [] // Will contain ordered questions
+          };
+          rootWorkflows.push(workflowMap[groupId]);
+        } else {
+          // This is a question within a workflow
+          const groupId = w.workflowGroupId ? w.workflowGroupId.toString() : w._id.toString();
+          if (!workflowMap[groupId]) {
+            // Find the root workflow for this group
+            const rootWorkflow = workflowDocs.find(rw => 
+              (rw._id.toString() === groupId && rw.isRoot) || 
+              (rw.workflowGroupId && rw.workflowGroupId.toString() === groupId && rw.isRoot)
+            );
+            if (rootWorkflow) {
+              workflowMap[groupId] = {
+                _id: rootWorkflow._id,
+                title: rootWorkflow.title,
+                question: rootWorkflow.question,
+                questionType: rootWorkflow.questionType,
+                options: rootWorkflow.options,
+                isRoot: rootWorkflow.isRoot,
+                order: rootWorkflow.order,
+                workflowGroupId: rootWorkflow.workflowGroupId,
+                questions: []
+              };
+              rootWorkflows.push(workflowMap[groupId]);
+            } else {
+              // Create a placeholder if root not found
+              workflowMap[groupId] = {
+                _id: groupId,
+                title: 'Unnamed Workflow',
+                question: '',
+                questionType: 'single_choice',
+                options: [],
+                isRoot: true,
+                order: 0,
+                questions: []
+              };
+            }
+          }
+          workflowMap[groupId].questions.push(workflowData);
+        }
+      });
+      
+      // Sort questions within each workflow by order
+      rootWorkflows.forEach(workflow => {
+        if (workflow.questions) {
+          workflow.questions.sort((a, b) => (a.order || 0) - (b.order || 0));
+        }
+      });
+      
+      const workflows = rootWorkflows;
 
       // Prepare integration data
       const integrationData = integration ? {
