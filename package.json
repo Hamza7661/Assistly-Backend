@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "@sendgrid/mail": "^8.1.5",
+    "@stripe/stripe-js": "^8.4.0",
     "bcryptjs": "^3.0.2",
     "bull": "^4.16.5",
     "compression": "^1.8.1",
@@ -54,6 +55,7 @@
     "redis": "^5.8.2",
     "sharp": "^0.34.3",
     "socket.io": "^4.8.1",
+    "stripe": "^19.3.1",
     "twilio": "^5.10.0",
     "uuid": "^11.1.0",
     "winston": "^3.17.0",

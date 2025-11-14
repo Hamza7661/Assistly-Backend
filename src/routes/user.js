@@ -625,8 +625,14 @@ class UserController {
         return next(new AppError('User ID is required', 400));
       }
 
-      const allowedUpdates = ['firstName', 'lastName', 'phoneNumber', 'email', 'profession', 'professionDescription', 'package', 'website', 'twilioPhoneNumber'];
+      const allowedUpdates = ['firstName', 'lastName', 'phoneNumber', 'email', 'profession', 'professionDescription', 'industry', 'region', 'package', 'website', 'twilioPhoneNumber'];
       const filteredUpdates = {};
+
+      // Get current user to check existing industry
+      const currentUser = await User.findById(id);
+      if (!currentUser) {
+        return next(new AppError('User not found', 404));
+      }
 
       Object.keys(updateData).forEach(key => {
         if (!allowedUpdates.includes(key)) return;
@@ -635,9 +641,26 @@ class UserController {
         // Map alias 'profession' -> 'professionDescription'
         const targetKey = key === 'profession' ? 'professionDescription' : key;
 
+        // Prevent changing industry if it's already set
+        if (targetKey === 'industry') {
+          if (currentUser.industry && currentUser.industry.trim() !== '') {
+            // Industry is already set, don't allow changes
+            return;
+          }
+          // Skip empty strings for industry
+          if (!value || value.trim() === '') {
+            return; // Don't include empty industry
+          }
+        }
+
         // Treat empty string website as null (clear)
         if (targetKey === 'website' && (value === '' || value === undefined)) {
           value = null;
+        }
+
+        // Skip undefined/null values for other fields (but allow empty strings for optional fields)
+        if (value === undefined || value === null) {
+          return;
         }
 
         filteredUpdates[targetKey] = value;
@@ -647,17 +670,18 @@ class UserController {
         return next(new AppError('No valid fields to update', 400));
       }
 
-      const user = await User.findByIdAndUpdate(
-        id,
-        filteredUpdates,
-        { new: true, runValidators: true }
-      ).select('-password -refreshToken');
+      logger.info('Updating user fields', { userId: id, fields: Object.keys(filteredUpdates), values: filteredUpdates });
 
-      if (!user) {
-        return next(new AppError('User not found', 404));
-      }
+      // Use the currentUser we already fetched, just update it
+      Object.assign(currentUser, filteredUpdates);
+      await currentUser.save({ runValidators: true });
+      
+      // Populate package for response
+      const user = await User.findById(id)
+        .select('-password -refreshToken')
+        .populate('package', 'name price limits features type');
 
-      logger.info('Updated user', { userId: id, updatedFields: Object.keys(filteredUpdates) });
+      logger.info('Updated user successfully', { userId: id, updatedFields: Object.keys(filteredUpdates), industry: user.industry });
 
       res.status(200).json({
         status: 'success',
@@ -666,13 +690,15 @@ class UserController {
         }
       });
     } catch (error) {
+      logger.error('Error updating user', { error: error.message, stack: error.stack, userId: id, updateData: filteredUpdates });
       if (error.name === 'CastError') {
         return next(new AppError('Invalid user ID format', 400));
       }
       if (error.name === 'ValidationError') {
-        return next(new AppError(error.message, 400));
+        const validationErrors = Object.values(error.errors || {}).map((err) => err.message).join(', ');
+        return next(new AppError(`Validation failed: ${validationErrors || error.message}`, 400));
       }
-      next(new AppError('Failed to update user', 500));
+      next(new AppError(`Failed to update user: ${error.message}`, 500));
     }
   }
 
