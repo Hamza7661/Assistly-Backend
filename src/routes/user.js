@@ -252,6 +252,48 @@ class UserController {
         }
       });
       
+    
+      treatmentPlans.forEach(plan => {
+        if (plan.attachedWorkflows && Array.isArray(plan.attachedWorkflows)) {
+          plan.attachedWorkflows.forEach(attachedFlow => {
+            if (attachedFlow.workflow && attachedFlow.workflow._id) {
+            
+              const existingIndex = rootWorkflows.findIndex(w => 
+                w._id && w._id.toString() === attachedFlow.workflow._id.toString()
+              );
+              
+              if (existingIndex === -1) {
+               
+                const workflowToAdd = {
+                  ...attachedFlow.workflow,
+                
+                  treatmentPlanOrder: attachedFlow.order || 0,
+                  treatmentPlanId: plan.question, 
+                  questions: attachedFlow.workflow.questions || [] 
+                };
+                rootWorkflows.push(workflowToAdd);
+              } else {
+                
+                rootWorkflows[existingIndex].treatmentPlanOrder = attachedFlow.order || 0;
+                rootWorkflows[existingIndex].treatmentPlanId = plan.question;
+              }
+            }
+          });
+        }
+      });
+      
+    
+      rootWorkflows.sort((a, b) => {
+       
+        const aOrder = a.treatmentPlanOrder !== undefined ? a.treatmentPlanOrder : (a.order || 0);
+        const bOrder = b.treatmentPlanOrder !== undefined ? b.treatmentPlanOrder : (b.order || 0);
+        if (aOrder !== bOrder) {
+          return aOrder - bOrder;
+        }
+       
+        return (a.order || 0) - (b.order || 0);
+      });
+      
       const workflows = rootWorkflows;
 
       // Prepare integration data
@@ -452,6 +494,48 @@ class UserController {
             rootWorkflows.splice(index, 1);
           }
         }
+      });
+      
+    
+      treatmentPlans.forEach(plan => {
+        if (plan.attachedWorkflows && Array.isArray(plan.attachedWorkflows)) {
+          plan.attachedWorkflows.forEach(attachedFlow => {
+            if (attachedFlow.workflow && attachedFlow.workflow._id) {
+            
+              const existingIndex = rootWorkflows.findIndex(w => 
+                w._id && w._id.toString() === attachedFlow.workflow._id.toString()
+              );
+              
+              if (existingIndex === -1) {
+              
+                const workflowToAdd = {
+                  ...attachedFlow.workflow,
+                 
+                  treatmentPlanOrder: attachedFlow.order || 0,
+                  treatmentPlanId: plan.question, 
+                  questions: attachedFlow.workflow.questions || [] 
+                };
+                rootWorkflows.push(workflowToAdd);
+              } else {
+                
+                rootWorkflows[existingIndex].treatmentPlanOrder = attachedFlow.order || 0;
+                rootWorkflows[existingIndex].treatmentPlanId = plan.question;
+              }
+            }
+          });
+        }
+      });
+      
+  
+      rootWorkflows.sort((a, b) => {
+      
+        const aOrder = a.treatmentPlanOrder !== undefined ? a.treatmentPlanOrder : (a.order || 0);
+        const bOrder = b.treatmentPlanOrder !== undefined ? b.treatmentPlanOrder : (b.order || 0);
+        if (aOrder !== bOrder) {
+          return aOrder - bOrder;
+        }
+       
+        return (a.order || 0) - (b.order || 0);
       });
       
       const workflows = rootWorkflows;
