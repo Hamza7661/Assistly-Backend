@@ -81,14 +81,14 @@ const userSchema = new mongoose.Schema({
     enum: ['healthcare', 'dental', 'legal', 'real-estate', 'finance', 'education', 'retail', 'hospitality', 'fitness', 'beauty', 'automotive', 'consulting', 'technology', 'food', 'other'],
     index: true
   },
-  region: {
-    type: String,
-    required: false,
-    trim: true,
-    enum: ['us', 'uk', 'eu', 'asia', 'middle-east', 'africa', 'oceania', 'latin-america'],
-    default: 'us',
-    index: true
-  },
+    region: {
+      type: String,
+      required: false,
+      trim: true,
+      enum: ['us', 'uk', 'eu', 'asia', 'middle-east', 'africa', 'oceania', 'latin-america'],
+      default: 'uk',
+      index: true
+    },
   package: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Package',
@@ -437,13 +437,13 @@ const userValidationSchema = Joi.object({
       'any.required': 'Industry is required'
     }),
   
-  region: Joi.string()
-    .valid('us', 'uk', 'eu', 'asia', 'middle-east', 'africa', 'oceania', 'latin-america')
-    .optional()
-    .default('us')
-    .messages({
-      'any.only': 'Please select a valid region'
-    }),
+      region: Joi.string()
+        .valid('us', 'uk', 'eu', 'asia', 'middle-east', 'africa', 'oceania', 'latin-america')
+        .optional()
+        .default('uk')
+        .messages({
+          'any.only': 'Please select a valid region'
+        }),
   
   website: Joi.string()
     .uri({ scheme: ['http', 'https'] })

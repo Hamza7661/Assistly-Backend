@@ -71,7 +71,7 @@ class AuthController {
         email,
         professionDescription,
         industry,
-        region: region || 'us',
+        region: region || 'uk',
         password,
         website,
         metadata: {
