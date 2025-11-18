@@ -6,7 +6,6 @@ const { AppError } = require('../utils/errorHandler');
 const { Questionnaire, QUESTIONNAIRE_TYPES } = require('../models/Questionnaire');
 const { QuestionType } = require('../models/QuestionType');
 const { LEAD_TYPES_LIST } = require('../enums/leadTypes');
-const { SERVICES_LIST } = require('../enums/services');
 const { Integration } = require('../models/Integration');
 const cacheManager = require('../utils/cache');
 const { authenticateToken, requireAdmin, requireUserOrAdmin } = require('../middleware/auth');
@@ -324,7 +323,6 @@ class UserController {
             website: user.website
           },
           leadTypes: LEAD_TYPES_LIST,
-          services: SERVICES_LIST,
           treatmentPlans,
           faq,
           integration: integrationData,
@@ -571,7 +569,6 @@ class UserController {
             website: user.website
           },
           leadTypes: LEAD_TYPES_LIST,
-          services: SERVICES_LIST,
           treatmentPlans,
           faq,
           integration: integrationData,

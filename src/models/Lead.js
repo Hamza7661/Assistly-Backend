@@ -1,7 +1,6 @@
 const mongoose = require('mongoose');
 const Joi = require('joi');
 const { LEAD_TYPES_VALUES } = require('../enums/leadTypes');
-const { SERVICES_LIST } = require('../enums/services');
 
 const leadSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
