@@ -1,29 +1,6 @@
 const mongoose = require('mongoose');
 const Joi = require('joi');
 
-// Schema for workflow options (answers/buttons)
-const workflowOptionSchema = new mongoose.Schema({
-  text: {
-    type: String,
-    required: true,
-    trim: true,
-    maxlength: 200
-  },
-  nextQuestionId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'ChatbotWorkflow',
-    default: null
-  },
-  isTerminal: {
-    type: Boolean,
-    default: false
-  },
-  order: {
-    type: Number,
-    default: 0
-  }
-}, { _id: false });
-
 // Schema for workflow questions
 const chatbotWorkflowSchema = new mongoose.Schema({
   owner: {
@@ -50,12 +27,11 @@ const chatbotWorkflowSchema = new mongoose.Schema({
     trim: true,
     maxlength: 500
   },
-  questionType: {
-    type: String,
-    enum: ['single_choice', 'multiple_choice', 'text_response'],
-    default: 'text_response'
+  questionTypeId: {
+    type: Number,
+    required: true,
+    default: 1 
   },
-  options: [workflowOptionSchema],
   isRoot: {
     type: Boolean,
     default: false
@@ -92,18 +68,10 @@ chatbotWorkflowSchema.pre('save', function(next) {
 const ChatbotWorkflow = mongoose.model('ChatbotWorkflow', chatbotWorkflowSchema);
 
 // Validation schemas
-const workflowOptionValidationSchema = Joi.object({
-  text: Joi.string().max(200).required(),
-  nextQuestionId: Joi.string().allow(null, ''),
-  isTerminal: Joi.boolean().optional(),
-  order: Joi.number().optional()
-});
-
 const workflowValidationSchema = Joi.object({
   title: Joi.string().max(200).required(),
   question: Joi.string().max(500).required(),
-  questionType: Joi.string().valid('single_choice', 'multiple_choice', 'text_response').default('text_response'),
-  options: Joi.array().items(workflowOptionValidationSchema).default([]),
+  questionTypeId: Joi.number().integer().min(1).default(1), 
   workflowGroupId: Joi.string().allow(null, '').optional(),
   isRoot: Joi.boolean().optional(),
   isActive: Joi.boolean().optional(),
@@ -113,8 +81,7 @@ const workflowValidationSchema = Joi.object({
 const workflowUpdateValidationSchema = Joi.object({
   title: Joi.string().max(200).optional(),
   question: Joi.string().max(500).optional(),
-  questionType: Joi.string().valid('single_choice', 'multiple_choice', 'text_response').default('text_response'),
-  options: Joi.array().items(workflowOptionValidationSchema).default([]),
+  questionTypeId: Joi.number().integer().min(1).optional(), // Numeric ID from QuestionType table
   workflowGroupId: Joi.string().allow(null, '').optional(),
   isRoot: Joi.boolean().optional(),
   isActive: Joi.boolean().optional(),
