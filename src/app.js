@@ -19,6 +19,7 @@ const questionnaireRoutes = require('./routes/questionnaire');
 const appointmentsRoutes = require('./routes/appointments');
 const servicesRoutes = require('./routes/services');
 const leadTypesRoutes = require('./routes/leadTypes');
+const questionTypesRoutes = require('./routes/questionTypes');
 const leadsRoutes = require('./routes/leads');
 const availabilityRoutes = require('./routes/availability');
 const integrationRoutes = require('./routes/integration');
@@ -69,6 +70,7 @@ class Application {
     this.app.use(`${basePath}/appointments`, securityMiddleware.getRateLimiters().api, appointmentsRoutes);
     this.app.use(`${basePath}/services`, securityMiddleware.getRateLimiters().api, servicesRoutes);
     this.app.use(`${basePath}/lead-types`, securityMiddleware.getRateLimiters().api, leadTypesRoutes);
+    this.app.use(`${basePath}/question-types`, securityMiddleware.getRateLimiters().api, questionTypesRoutes);
     this.app.use(`${basePath}/leads`, securityMiddleware.getRateLimiters().api, leadsRoutes);
     this.app.use(`${basePath}/availability`, securityMiddleware.getRateLimiters().api, availabilityRoutes);
     this.app.use(`${basePath}/integration`, securityMiddleware.getRateLimiters().api, integrationRoutes);

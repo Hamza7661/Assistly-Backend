@@ -123,7 +123,7 @@ class UserController {
 
       const treatmentPromise = Questionnaire.find({ owner: id, type: QUESTIONNAIRE_TYPES.TREATMENT_PLAN, isActive: true })
         .select('question answer attachedWorkflows')
-        .populate('attachedWorkflows.workflowId', 'title question questionType options isRoot order')
+        .populate('attachedWorkflows.workflowId', 'title question questionTypeId isRoot order')
         .sort({ updatedAt: -1 })
         .exec();
 
@@ -137,7 +137,7 @@ class UserController {
 
       const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
       const workflowPromise = ChatbotWorkflow.find({ owner: id })
-        .select('title question questionType options isRoot order workflowGroupId isActive')
+        .select('title question questionTypeId isRoot order workflowGroupId isActive')
         .sort({ order: 1, createdAt: 1 })
         .exec();
 
@@ -160,8 +160,7 @@ class UserController {
               _id: aw.workflowId._id,
               title: aw.workflowId.title,
               question: aw.workflowId.question,
-              questionType: aw.workflowId.questionType,
-              options: aw.workflowId.options,
+              questionTypeId: aw.workflowId.questionTypeId,
               isRoot: aw.workflowId.isRoot,
               order: aw.workflowId.order
             } : null
@@ -178,8 +177,7 @@ class UserController {
           _id: w._id,
           title: w.title,
           question: w.question,
-          questionType: w.questionType,
-          options: w.options,
+          questionTypeId: w.questionTypeId,
           isRoot: w.isRoot,
           order: w.order,
           workflowGroupId: w.workflowGroupId,
@@ -208,8 +206,7 @@ class UserController {
                 _id: rootWorkflow._id,
                 title: rootWorkflow.title,
                 question: rootWorkflow.question,
-                questionType: rootWorkflow.questionType,
-                options: rootWorkflow.options,
+                questionTypeId: rootWorkflow.questionTypeId,
                 isRoot: rootWorkflow.isRoot,
                 order: rootWorkflow.order,
                 workflowGroupId: rootWorkflow.workflowGroupId,
@@ -223,8 +220,7 @@ class UserController {
                 _id: groupId,
                 title: 'Unnamed Workflow',
                 question: '',
-                questionType: 'text_response',
-                options: [],
+                questionTypeId: 3,
                 isRoot: true,
                 order: 0,
                 isActive: true,
@@ -371,7 +367,7 @@ class UserController {
 
       const treatmentPromise = Questionnaire.find({ owner: userId, type: QUESTIONNAIRE_TYPES.TREATMENT_PLAN, isActive: true })
         .select('question answer attachedWorkflows')
-        .populate('attachedWorkflows.workflowId', 'title question questionType options isRoot order')
+        .populate('attachedWorkflows.workflowId', 'title question questionTypeId isRoot order')
         .sort({ updatedAt: -1 })
         .exec();
 
@@ -385,7 +381,7 @@ class UserController {
 
       const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
       const workflowPromise = ChatbotWorkflow.find({ owner: userId })
-        .select('title question questionType options isRoot order workflowGroupId isActive')
+        .select('title question questionTypeId isRoot order workflowGroupId isActive')
         .sort({ order: 1, createdAt: 1 })
         .exec();
 
@@ -404,8 +400,7 @@ class UserController {
               _id: aw.workflowId._id,
               title: aw.workflowId.title,
               question: aw.workflowId.question,
-              questionType: aw.workflowId.questionType,
-              options: aw.workflowId.options,
+              questionTypeId: aw.workflowId.questionTypeId,
               isRoot: aw.workflowId.isRoot,
               order: aw.workflowId.order
             } : null
@@ -422,8 +417,7 @@ class UserController {
           _id: w._id,
           title: w.title,
           question: w.question,
-          questionType: w.questionType,
-          options: w.options,
+          questionTypeId: w.questionTypeId,
           isRoot: w.isRoot,
           order: w.order,
           workflowGroupId: w.workflowGroupId,
@@ -452,8 +446,7 @@ class UserController {
                 _id: rootWorkflow._id,
                 title: rootWorkflow.title,
                 question: rootWorkflow.question,
-                questionType: rootWorkflow.questionType,
-                options: rootWorkflow.options,
+                questionTypeId: rootWorkflow.questionTypeId,
                 isRoot: rootWorkflow.isRoot,
                 order: rootWorkflow.order,
                 workflowGroupId: rootWorkflow.workflowGroupId,
@@ -467,8 +460,7 @@ class UserController {
                 _id: groupId,
                 title: 'Unnamed Workflow',
                 question: '',
-                questionType: 'text_response',
-                options: [],
+                questionTypeId: 3,
                 isRoot: true,
                 order: 0,
                 isActive: true,

@@ -43,7 +43,7 @@ router.get('/', authenticateToken, requireUserOrAdmin, async (req, res, next) =>
     const filter = { owner: req.user.id };
     if (type) filter.type = parseInt(type);
     if (!includeInactive) filter.isActive = true;
-    const items = await Questionnaire.find(filter).populate('attachedWorkflows.workflowId', '_id title question questionType options isRoot isActive order').sort({ updatedAt: -1 }).exec();
+    const items = await Questionnaire.find(filter).populate('attachedWorkflows.workflowId', '_id title question questionTypeId isRoot isActive order').sort({ updatedAt: -1 }).exec();
     res.status(200).json({ status: 'success', data: { items, count: items.length } });
   } catch (err) { next(err); }
 });

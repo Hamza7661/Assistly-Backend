@@ -6,6 +6,7 @@ const {
   workflowUpdateValidationSchema,
   workflowReplaceArraySchema 
 } = require('../models/ChatbotWorkflow');
+const { QuestionType } = require('../models/QuestionType');
 const { AppError } = require('../utils/errorHandler');
 const { logger } = require('../utils/logger');
 const { authenticateToken, requireUserOrAdmin } = require('../middleware/auth');
@@ -17,6 +18,19 @@ router.get('/health', (req, res) => {
   res.json({ status: 'ok', message: 'Chatbot workflow routes are working' });
 });
 
+// Helper function to validate questionType ID exists
+async function validateQuestionTypeId(questionTypeId) {
+  if (!questionTypeId) {
+    return 3; // Default to TEXT_RESPONSE (id: 3)
+  }
+  
+  const questionType = await QuestionType.findOne({ id: questionTypeId, isActive: true });
+  if (!questionType) {
+    throw new AppError(`Invalid questionType ID: ${questionTypeId}`, 400);
+  }
+  return questionTypeId;
+}
+
 // Create a new workflow question
 router.post('/', authenticateToken, requireUserOrAdmin, async (req, res, next) => {
   try {
@@ -26,8 +40,11 @@ router.post('/', authenticateToken, requireUserOrAdmin, async (req, res, next) =
       throw new AppError(`Validation failed: ${messages.join(', ')}`, 400);
     }
     
+    // Validate questionTypeId exists in database
+    const questionTypeId = await validateQuestionTypeId(value.questionTypeId);
+    
     const ownerId = req.user.id;
-    let workflowData = { ...value, owner: ownerId };
+    let workflowData = { ...value, owner: ownerId, questionTypeId: questionTypeId };
     
     // If this is a root question (new workflow group), workflowGroupId should be null
     // After creation, we'll set it to its own ID
@@ -270,9 +287,15 @@ router.patch('/:id', authenticateToken, requireUserOrAdmin, async (req, res, nex
       throw new AppError(`Validation failed: ${messages.join(', ')}`, 400);
     }
     
+    // Validate questionTypeId exists if provided
+    const updateData = { ...value };
+    if (value.questionTypeId !== undefined) {
+      updateData.questionTypeId = await validateQuestionTypeId(value.questionTypeId);
+    }
+    
     const workflow = await ChatbotWorkflow.findOneAndUpdate(
       { _id: req.params.id, owner: req.user.id },
-      value,
+      updateData,
       { new: true, runValidators: true }
     ).exec();
     
@@ -329,6 +352,15 @@ router.put('/', authenticateToken, requireUserOrAdmin, async (req, res, next) =>
     // Insert new workflows
     let inserted = [];
     if (Array.isArray(workflows) && workflows.length > 0) {
+      // Validate all questionTypeId values exist
+      await Promise.all(
+        workflows.map(async (w) => {
+          if (w.questionTypeId !== undefined) {
+            await validateQuestionTypeId(w.questionTypeId);
+          }
+        })
+      );
+      
       inserted = await ChatbotWorkflow.insertMany(
         workflows.map(w => ({ ...w, owner: ownerId }))
       );
@@ -352,7 +384,7 @@ router.get('/public/:ownerId', async (req, res, next) => {
     const filter = { owner: ownerId, isActive: true };
     
     const workflows = await ChatbotWorkflow.find(filter)
-      .select('title question questionType options isRoot order')
+      .select('title question questionTypeId isRoot order')
       .sort({ order: 1, createdAt: 1 })
       .exec();
     
