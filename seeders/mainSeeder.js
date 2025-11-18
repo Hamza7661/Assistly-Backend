@@ -1,7 +1,29 @@
 const PackageSeeder = require('./packageSeeder');
+const { QuestionType } = require('../src/models/QuestionType');
 const { logger } = require('../src/utils/logger');
 const mongoose = require('mongoose');
 require('dotenv').config();
+
+const questionTypes = [
+  {
+    id: 1,
+    code: 'text_response',
+    value: 'Text Response',
+    isActive: true
+  },
+  {
+    id: 2,
+    code: 'multiple_choice',
+    value: 'Multiple Choice',
+    isActive: true
+  },
+  {
+    id: 3,
+    code: 'single_choice',
+    value: 'Single Choice',
+    isActive: true
+  }
+];
 
 class MainSeeder {
   static async connectDB() {
@@ -35,6 +57,10 @@ class MainSeeder {
       logger.info('📦 Seeding packages...');
       await PackageSeeder.seed();
       
+      // Seed question types
+      logger.info('❓ Seeding question types...');
+      await this.seedQuestionTypes();
+      
       // Add more seeders here as they are created
       // await UserSeeder.seed();
       // await RoleSeeder.seed();
@@ -63,6 +89,10 @@ class MainSeeder {
       logger.info('📦 Clearing packages...');
       await PackageSeeder.clear();
       
+      // Clear question types
+      logger.info('❓ Clearing question types...');
+      await this.clearQuestionTypes();
+      
       // Add more clear methods here as they are created
       // await UserSeeder.clear();
       // await RoleSeeder.clear();
@@ -90,6 +120,10 @@ class MainSeeder {
       // Reset packages
       logger.info('📦 Resetting packages...');
       await PackageSeeder.reset();
+      
+      // Reset question types
+      logger.info('❓ Resetting question types...');
+      await this.resetQuestionTypes();
       
       // Add more reset methods here as they are created
       // await UserSeeder.reset();
@@ -120,6 +154,10 @@ class MainSeeder {
       const packageCount = await Package.countDocuments();
       logger.info(`📦 Packages: ${packageCount} found`);
       
+      // Check question type status
+      const questionTypeCount = await QuestionType.countDocuments();
+      logger.info(`❓ Question Types: ${questionTypeCount} found`);
+      
       // Add more status checks here as they are created
       // const userCount = await User.countDocuments();
       // logger.info(`👥 Users: ${userCount} found`);
@@ -132,6 +170,50 @@ class MainSeeder {
     } catch (error) {
       logger.error('❌ Error checking status:', error);
       await this.disconnectDB();
+      throw error;
+    }
+  }
+
+  static async seedQuestionTypes() {
+    try {
+      // Check if question types already exist
+      const existingCount = await QuestionType.countDocuments();
+      if (existingCount > 0) {
+        logger.info('Question types already exist, skipping seeding');
+        return;
+      }
+
+      // Insert question types
+      const result = await QuestionType.insertMany(questionTypes);
+      logger.info(`✅ Successfully seeded ${result.length} question types`);
+      
+      // Log seeded question types
+      result.forEach(qt => {
+        logger.info(`❓ Question Type ${qt.id}: ${qt.code} - ${qt.value}`);
+      });
+    } catch (error) {
+      logger.error('❌ Error seeding question types:', error);
+      throw error;
+    }
+  }
+
+  static async clearQuestionTypes() {
+    try {
+      await QuestionType.deleteMany({});
+      logger.info('✅ All question types cleared');
+    } catch (error) {
+      logger.error('❌ Error clearing question types:', error);
+      throw error;
+    }
+  }
+
+  static async resetQuestionTypes() {
+    try {
+      await this.clearQuestionTypes();
+      await this.seedQuestionTypes();
+      logger.info('✅ Question types reset completed');
+    } catch (error) {
+      logger.error('❌ Error resetting question types:', error);
       throw error;
     }
   }

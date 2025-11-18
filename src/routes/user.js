@@ -4,6 +4,7 @@ const { User } = require('../models/User');
 const { logger } = require('../utils/logger');
 const { AppError } = require('../utils/errorHandler');
 const { Questionnaire, QUESTIONNAIRE_TYPES } = require('../models/Questionnaire');
+const { QuestionType } = require('../models/QuestionType');
 const { LEAD_TYPES_LIST } = require('../enums/leadTypes');
 const { SERVICES_LIST } = require('../enums/services');
 const { Integration } = require('../models/Integration');
@@ -122,7 +123,8 @@ class UserController {
         .exec();
 
       const treatmentPromise = Questionnaire.find({ owner: id, type: QUESTIONNAIRE_TYPES.TREATMENT_PLAN, isActive: true })
-        .select('question answer')
+        .select('question answer attachedWorkflows')
+        .populate('attachedWorkflows.workflowId', 'title question questionTypeId isRoot order')
         .sort({ updatedAt: -1 })
         .exec();
 
@@ -135,8 +137,8 @@ class UserController {
         .exec();
 
       const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
-      const workflowPromise = ChatbotWorkflow.find({ owner: id, isActive: true })
-        .select('title question questionType options isRoot order')
+      const workflowPromise = ChatbotWorkflow.find({ owner: id })
+        .select('title question questionTypeId isRoot order workflowGroupId isActive')
         .sort({ order: 1, createdAt: 1 })
         .exec();
 
@@ -146,18 +148,157 @@ class UserController {
         return next(new AppError('User not found', 404));
       }
 
-      const treatmentPlans = treatmentDocs.map(d => ({ question: d.question, answer: d.answer }));
+      // Get default question type (first active question type)
+      const defaultQuestionType = await QuestionType.findOne({ isActive: true })
+        .sort({ id: 1 })
+        .select('id')
+        .lean();
+      const defaultQuestionTypeId = defaultQuestionType?.id || 1;
+
+      const treatmentPlans = treatmentDocs.map(d => ({
+        question: d.question,
+        answer: d.answer,
+        attachedWorkflows: (d.attachedWorkflows || [])
+          .filter(aw => aw.workflowId)
+          .sort((a, b) => (a.order || 0) - (b.order || 0))
+          .map(aw => ({
+            workflowId: aw.workflowId._id || aw.workflowId,
+            order: aw.order || 0,
+            workflow: aw.workflowId ? {
+              _id: aw.workflowId._id,
+              title: aw.workflowId.title,
+              question: aw.workflowId.question,
+              questionTypeId: aw.workflowId.questionTypeId,
+              isRoot: aw.workflowId.isRoot,
+              order: aw.workflowId.order
+            } : null
+          }))
+      }));
       const faq = faqDocs.map(d => ({ question: d.question, answer: d.answer }));
 
-      const workflows = workflowDocs.map(w => ({
-        _id: w._id,
-        title: w.title,
-        question: w.question,
-        questionType: w.questionType,
-        options: w.options,
-        isRoot: w.isRoot,
-        order: w.order
-      }));
+      // Group workflows by workflowGroupId and include ordered questions
+      const workflowMap = {};
+      const rootWorkflows = [];
+      
+      workflowDocs.forEach(w => {
+        const workflowData = {
+          _id: w._id,
+          title: w.title,
+          question: w.question,
+          questionTypeId: w.questionTypeId,
+          isRoot: w.isRoot,
+          order: w.order,
+          workflowGroupId: w.workflowGroupId,
+          isActive: w.isActive
+        };
+        
+        if (w.isRoot || !w.workflowGroupId) {
+          // This is a root workflow
+          const groupId = w._id.toString();
+          workflowMap[groupId] = {
+            ...workflowData,
+            questions: [] // Will contain ordered questions
+          };
+          rootWorkflows.push(workflowMap[groupId]);
+        } else {
+          // This is a question within a workflow
+          const groupId = w.workflowGroupId ? w.workflowGroupId.toString() : w._id.toString();
+          if (!workflowMap[groupId]) {
+            // Find the root workflow for this group
+            const rootWorkflow = workflowDocs.find(rw => 
+              (rw._id.toString() === groupId && rw.isRoot) || 
+              (rw.workflowGroupId && rw.workflowGroupId.toString() === groupId && rw.isRoot)
+            );
+            if (rootWorkflow) {
+              workflowMap[groupId] = {
+                _id: rootWorkflow._id,
+                title: rootWorkflow.title,
+                question: rootWorkflow.question,
+                questionTypeId: rootWorkflow.questionTypeId,
+                isRoot: rootWorkflow.isRoot,
+                order: rootWorkflow.order,
+                workflowGroupId: rootWorkflow.workflowGroupId,
+                isActive: rootWorkflow.isActive,
+                questions: []
+              };
+              rootWorkflows.push(workflowMap[groupId]);
+            } else {
+              // Create a placeholder if root not found
+              workflowMap[groupId] = {
+                _id: groupId,
+                title: 'Unnamed Workflow',
+                question: '',
+                questionTypeId: defaultQuestionTypeId,
+                isRoot: true,
+                order: 0,
+                isActive: true,
+                questions: []
+              };
+            }
+          }
+          workflowMap[groupId].questions.push(workflowData);
+        }
+      });
+      
+      // Sort questions within each workflow by order and filter out inactive questions
+      rootWorkflows.forEach(workflow => {
+        if (workflow.questions) {
+          workflow.questions = workflow.questions
+            .filter(q => q.isActive !== false) // Only include active questions
+            .sort((a, b) => (a.order || 0) - (b.order || 0));
+        }
+        // Also filter out inactive root workflows
+        if (workflow.isActive === false) {
+          const index = rootWorkflows.indexOf(workflow);
+          if (index > -1) {
+            rootWorkflows.splice(index, 1);
+          }
+        }
+      });
+      
+    
+      treatmentPlans.forEach(plan => {
+        if (plan.attachedWorkflows && Array.isArray(plan.attachedWorkflows)) {
+          plan.attachedWorkflows.forEach(attachedFlow => {
+            if (attachedFlow.workflow && attachedFlow.workflow._id) {
+            
+              const existingIndex = rootWorkflows.findIndex(w => 
+                w._id && w._id.toString() === attachedFlow.workflow._id.toString()
+              );
+              
+              if (existingIndex === -1) {
+               
+                const workflowToAdd = {
+                  ...attachedFlow.workflow,
+                
+                  treatmentPlanOrder: attachedFlow.order || 0,
+                  treatmentPlanId: plan.question, 
+                  questions: attachedFlow.workflow.questions || [] 
+                };
+                rootWorkflows.push(workflowToAdd);
+              } else {
+                
+                rootWorkflows[existingIndex].treatmentPlanOrder = attachedFlow.order || 0;
+                rootWorkflows[existingIndex].treatmentPlanId = plan.question;
+              }
+            }
+          });
+        }
+      });
+      
+    
+      rootWorkflows.sort((a, b) => {
+       
+        const aOrder = a.treatmentPlanOrder !== undefined ? a.treatmentPlanOrder : (a.order || 0);
+        const bOrder = b.treatmentPlanOrder !== undefined ? b.treatmentPlanOrder : (b.order || 0);
+        if (aOrder !== bOrder) {
+          return aOrder - bOrder;
+        }
+       
+        return (a.order || 0) - (b.order || 0);
+      });
+      
+      const workflows = rootWorkflows;
 
       // Prepare integration data
       const integrationData = integration ? {
@@ -233,7 +374,8 @@ class UserController {
       }
 
       const treatmentPromise = Questionnaire.find({ owner: userId, type: QUESTIONNAIRE_TYPES.TREATMENT_PLAN, isActive: true })
-        .select('question answer')
+        .select('question answer attachedWorkflows')
+        .populate('attachedWorkflows.workflowId', 'title question questionTypeId isRoot order')
         .sort({ updatedAt: -1 })
         .exec();
 
@@ -246,25 +388,164 @@ class UserController {
         .exec();
 
       const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
-      const workflowPromise = ChatbotWorkflow.find({ owner: userId, isActive: true })
-        .select('title question questionType options isRoot order')
+      const workflowPromise = ChatbotWorkflow.find({ owner: userId })
+        .select('title question questionTypeId isRoot order workflowGroupId isActive')
         .sort({ order: 1, createdAt: 1 })
         .exec();
 
       const [treatmentDocs, faqDocs, integration, workflowDocs] = await Promise.all([treatmentPromise, faqPromise, integrationPromise, workflowPromise]);
 
-      const treatmentPlans = treatmentDocs.map(d => ({ question: d.question, answer: d.answer }));
+      // Get default question type (first active question type)
+      const defaultQuestionType = await QuestionType.findOne({ isActive: true })
+        .sort({ id: 1 })
+        .select('id')
+        .lean();
+      const defaultQuestionTypeId = defaultQuestionType?.id || 1;
+
+      const treatmentPlans = treatmentDocs.map(d => ({
+        question: d.question,
+        answer: d.answer,
+        attachedWorkflows: (d.attachedWorkflows || [])
+          .filter(aw => aw.workflowId)
+          .sort((a, b) => (a.order || 0) - (b.order || 0))
+          .map(aw => ({
+            workflowId: aw.workflowId._id || aw.workflowId,
+            order: aw.order || 0,
+            workflow: aw.workflowId ? {
+              _id: aw.workflowId._id,
+              title: aw.workflowId.title,
+              question: aw.workflowId.question,
+              questionTypeId: aw.workflowId.questionTypeId,
+              isRoot: aw.workflowId.isRoot,
+              order: aw.workflowId.order
+            } : null
+          }))
+      }));
       const faq = faqDocs.map(d => ({ question: d.question, answer: d.answer }));
 
-      const workflows = workflowDocs.map(w => ({
-        _id: w._id,
-        title: w.title,
-        question: w.question,
-        questionType: w.questionType,
-        options: w.options,
-        isRoot: w.isRoot,
-        order: w.order
-      }));
+      // Group workflows by workflowGroupId and include ordered questions
+      const workflowMap = {};
+      const rootWorkflows = [];
+      
+      workflowDocs.forEach(w => {
+        const workflowData = {
+          _id: w._id,
+          title: w.title,
+          question: w.question,
+          questionTypeId: w.questionTypeId,
+          isRoot: w.isRoot,
+          order: w.order,
+          workflowGroupId: w.workflowGroupId,
+          isActive: w.isActive
+        };
+        
+        if (w.isRoot || !w.workflowGroupId) {
+          // This is a root workflow
+          const groupId = w._id.toString();
+          workflowMap[groupId] = {
+            ...workflowData,
+            questions: [] // Will contain ordered questions
+          };
+          rootWorkflows.push(workflowMap[groupId]);
+        } else {
+          // This is a question within a workflow
+          const groupId = w.workflowGroupId ? w.workflowGroupId.toString() : w._id.toString();
+          if (!workflowMap[groupId]) {
+            // Find the root workflow for this group
+            const rootWorkflow = workflowDocs.find(rw => 
+              (rw._id.toString() === groupId && rw.isRoot) || 
+              (rw.workflowGroupId && rw.workflowGroupId.toString() === groupId && rw.isRoot)
+            );
+            if (rootWorkflow) {
+              workflowMap[groupId] = {
+                _id: rootWorkflow._id,
+                title: rootWorkflow.title,
+                question: rootWorkflow.question,
+                questionTypeId: rootWorkflow.questionTypeId,
+                isRoot: rootWorkflow.isRoot,
+                order: rootWorkflow.order,
+                workflowGroupId: rootWorkflow.workflowGroupId,
+                isActive: rootWorkflow.isActive,
+                questions: []
+              };
+              rootWorkflows.push(workflowMap[groupId]);
+            } else {
+              // Create a placeholder if root not found
+              workflowMap[groupId] = {
+                _id: groupId,
+                title: 'Unnamed Workflow',
+                question: '',
+                questionTypeId: defaultQuestionTypeId,
+                isRoot: true,
+                order: 0,
+                isActive: true,
+                questions: []
+              };
+            }
+          }
+          workflowMap[groupId].questions.push(workflowData);
+        }
+      });
+      
+      // Sort questions within each workflow by order and filter out inactive questions
+      rootWorkflows.forEach(workflow => {
+        if (workflow.questions) {
+          workflow.questions = workflow.questions
+            .filter(q => q.isActive !== false) // Only include active questions
+            .sort((a, b) => (a.order || 0) - (b.order || 0));
+        }
+        // Also filter out inactive root workflows
+        if (workflow.isActive === false) {
+          const index = rootWorkflows.indexOf(workflow);
+          if (index > -1) {
+            rootWorkflows.splice(index, 1);
+          }
+        }
+      });
+      
+    
+      treatmentPlans.forEach(plan => {
+        if (plan.attachedWorkflows && Array.isArray(plan.attachedWorkflows)) {
+          plan.attachedWorkflows.forEach(attachedFlow => {
+            if (attachedFlow.workflow && attachedFlow.workflow._id) {
+            
+              const existingIndex = rootWorkflows.findIndex(w => 
+                w._id && w._id.toString() === attachedFlow.workflow._id.toString()
+              );
+              
+              if (existingIndex === -1) {
+              
+                const workflowToAdd = {
+                  ...attachedFlow.workflow,
+                 
+                  treatmentPlanOrder: attachedFlow.order || 0,
+                  treatmentPlanId: plan.question, 
+                  questions: attachedFlow.workflow.questions || [] 
+                };
+                rootWorkflows.push(workflowToAdd);
+              } else {
+                
+                rootWorkflows[existingIndex].treatmentPlanOrder = attachedFlow.order || 0;
+                rootWorkflows[existingIndex].treatmentPlanId = plan.question;
+              }
+            }
+          });
+        }
+      });
+      
+  
+      rootWorkflows.sort((a, b) => {
+      
+        const aOrder = a.treatmentPlanOrder !== undefined ? a.treatmentPlanOrder : (a.order || 0);
+        const bOrder = b.treatmentPlanOrder !== undefined ? b.treatmentPlanOrder : (b.order || 0);
+        if (aOrder !== bOrder) {
+          return aOrder - bOrder;
+        }
+       
+        return (a.order || 0) - (b.order || 0);
+      });
+      
+      const workflows = rootWorkflows;
 
       // Prepare integration data
       const integrationData = integration ? {
@@ -435,8 +716,14 @@ class UserController {
         return next(new AppError('User ID is required', 400));
       }
 
-      const allowedUpdates = ['firstName', 'lastName', 'phoneNumber', 'email', 'profession', 'professionDescription', 'package', 'website', 'twilioPhoneNumber'];
+      const allowedUpdates = ['firstName', 'lastName', 'phoneNumber', 'email', 'profession', 'professionDescription', 'industry', 'region', 'package', 'website', 'twilioPhoneNumber'];
       const filteredUpdates = {};
+
+      // Get current user to check existing industry
+      const currentUser = await User.findById(id);
+      if (!currentUser) {
+        return next(new AppError('User not found', 404));
+      }
 
       Object.keys(updateData).forEach(key => {
         if (!allowedUpdates.includes(key)) return;
@@ -445,9 +732,26 @@ class UserController {
         // Map alias 'profession' -> 'professionDescription'
         const targetKey = key === 'profession' ? 'professionDescription' : key;
 
+        // Prevent changing industry if it's already set
+        if (targetKey === 'industry') {
+          if (currentUser.industry && currentUser.industry.trim() !== '') {
+            // Industry is already set, don't allow changes
+            return;
+          }
+          // Skip empty strings for industry
+          if (!value || value.trim() === '') {
+            return; // Don't include empty industry
+          }
+        }
+
         // Treat empty string website as null (clear)
         if (targetKey === 'website' && (value === '' || value === undefined)) {
           value = null;
+        }
+
+        // Skip undefined/null values for other fields (but allow empty strings for optional fields)
+        if (value === undefined || value === null) {
+          return;
         }
 
         filteredUpdates[targetKey] = value;
@@ -457,17 +761,18 @@ class UserController {
         return next(new AppError('No valid fields to update', 400));
       }
 
-      const user = await User.findByIdAndUpdate(
-        id,
-        filteredUpdates,
-        { new: true, runValidators: true }
-      ).select('-password -refreshToken');
+      logger.info('Updating user fields', { userId: id, fields: Object.keys(filteredUpdates), values: filteredUpdates });
 
-      if (!user) {
-        return next(new AppError('User not found', 404));
-      }
+      // Use the currentUser we already fetched, just update it
+      Object.assign(currentUser, filteredUpdates);
+      await currentUser.save({ runValidators: true });
+      
+      // Populate package for response
+      const user = await User.findById(id)
+        .select('-password -refreshToken')
+        .populate('package', 'name price limits features type');
 
-      logger.info('Updated user', { userId: id, updatedFields: Object.keys(filteredUpdates) });
+      logger.info('Updated user successfully', { userId: id, updatedFields: Object.keys(filteredUpdates), industry: user.industry });
 
       res.status(200).json({
         status: 'success',
@@ -476,13 +781,15 @@ class UserController {
         }
       });
     } catch (error) {
+      logger.error('Error updating user', { error: error.message, stack: error.stack, userId: id, updateData: filteredUpdates });
       if (error.name === 'CastError') {
         return next(new AppError('Invalid user ID format', 400));
       }
       if (error.name === 'ValidationError') {
-        return next(new AppError(error.message, 400));
+        const validationErrors = Object.values(error.errors || {}).map((err) => err.message).join(', ');
+        return next(new AppError(`Validation failed: ${validationErrors || error.message}`, 400));
       }
-      next(new AppError('Failed to update user', 500));
+      next(new AppError(`Failed to update user: ${error.message}`, 500));
     }
   }
 

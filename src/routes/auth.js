@@ -52,7 +52,7 @@ class AuthController {
         throw new AppError(`Validation failed: ${errorMessages.join(', ')}`, 400);
       }
 
-      const { firstName, lastName, phoneNumber, email, professionDescription, package: packageId, password, website } = value;
+      const { firstName, lastName, phoneNumber, email, professionDescription, industry, region, package: packageId, password, website } = value;
 
       const existingUserByEmail = await User.findByEmail(email);
       if (existingUserByEmail) {
@@ -70,6 +70,8 @@ class AuthController {
         phoneNumber,
         email,
         professionDescription,
+        industry,
+        region: region || 'uk',
         password,
         website,
         metadata: {
@@ -142,7 +144,8 @@ class AuthController {
       const { accessToken, refreshToken } = AuthController.generateTokens(user._id);
 
       user.lastLogin = new Date();
-      await user.save();
+      // Skip validation during signin to allow users without industry to sign in
+      await user.save({ validateBeforeSave: false });
 
       logger.info(`User signed in: ${user.email} (${user._id})`);
 

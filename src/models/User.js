@@ -74,10 +74,36 @@ const userSchema = new mongoose.Schema({
     minlength: [1, 'Profession description cannot be empty'],
     maxlength: [300, 'Profession description cannot exceed 300 characters']
   },
+  industry: {
+    type: String,
+    required: false, // Optional for existing users, required during signup (enforced by Joi)
+    trim: true,
+    enum: ['healthcare', 'dental', 'legal', 'real-estate', 'finance', 'education', 'retail', 'hospitality', 'fitness', 'beauty', 'automotive', 'consulting', 'technology', 'food', 'other'],
+    index: true
+  },
+    region: {
+      type: String,
+      required: false,
+      trim: true,
+      enum: ['us', 'uk', 'eu', 'asia', 'middle-east', 'africa', 'oceania', 'latin-america'],
+      default: 'uk',
+      index: true
+    },
   package: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Package',
     required: false
+  },
+  stripeCustomerId: {
+    type: String,
+    default: null,
+    index: true,
+    sparse: true
+  },
+  subscription: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Subscription',
+    default: null
   },
   password: {
     type: String,
@@ -402,6 +428,22 @@ const userValidationSchema = Joi.object({
       'string.max': 'Profession description cannot exceed 300 characters',
       'any.required': 'Profession description is required'
     }),
+  
+  industry: Joi.string()
+    .valid('healthcare', 'dental', 'legal', 'real-estate', 'finance', 'education', 'retail', 'hospitality', 'fitness', 'beauty', 'automotive', 'consulting', 'technology', 'food', 'other')
+    .required()
+    .messages({
+      'any.only': 'Please select a valid industry',
+      'any.required': 'Industry is required'
+    }),
+  
+      region: Joi.string()
+        .valid('us', 'uk', 'eu', 'asia', 'middle-east', 'africa', 'oceania', 'latin-america')
+        .optional()
+        .default('uk')
+        .messages({
+          'any.only': 'Please select a valid region'
+        }),
   
   website: Joi.string()
     .uri({ scheme: ['http', 'https'] })
