@@ -4,6 +4,7 @@ const { User } = require('../models/User');
 const { logger } = require('../utils/logger');
 const { AppError } = require('../utils/errorHandler');
 const { Questionnaire, QUESTIONNAIRE_TYPES } = require('../models/Questionnaire');
+const { QuestionType } = require('../models/QuestionType');
 const { LEAD_TYPES_LIST } = require('../enums/leadTypes');
 const { SERVICES_LIST } = require('../enums/services');
 const { Integration } = require('../models/Integration');
@@ -147,6 +148,13 @@ class UserController {
         return next(new AppError('User not found', 404));
       }
 
+      // Get default question type (first active question type)
+      const defaultQuestionType = await QuestionType.findOne({ isActive: true })
+        .sort({ id: 1 })
+        .select('id')
+        .lean();
+      const defaultQuestionTypeId = defaultQuestionType?.id || 1;
+
       const treatmentPlans = treatmentDocs.map(d => ({
         question: d.question,
         answer: d.answer,
@@ -220,7 +228,7 @@ class UserController {
                 _id: groupId,
                 title: 'Unnamed Workflow',
                 question: '',
-                questionTypeId: 3,
+                questionTypeId: defaultQuestionTypeId,
                 isRoot: true,
                 order: 0,
                 isActive: true,
@@ -387,6 +395,13 @@ class UserController {
 
       const [treatmentDocs, faqDocs, integration, workflowDocs] = await Promise.all([treatmentPromise, faqPromise, integrationPromise, workflowPromise]);
 
+      // Get default question type (first active question type)
+      const defaultQuestionType = await QuestionType.findOne({ isActive: true })
+        .sort({ id: 1 })
+        .select('id')
+        .lean();
+      const defaultQuestionTypeId = defaultQuestionType?.id || 1;
+
       const treatmentPlans = treatmentDocs.map(d => ({
         question: d.question,
         answer: d.answer,
@@ -460,7 +475,7 @@ class UserController {
                 _id: groupId,
                 title: 'Unnamed Workflow',
                 question: '',
-                questionTypeId: 3,
+                questionTypeId: defaultQuestionTypeId,
                 isRoot: true,
                 order: 0,
                 isActive: true,

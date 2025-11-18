@@ -30,7 +30,7 @@ const chatbotWorkflowSchema = new mongoose.Schema({
   questionTypeId: {
     type: Number,
     required: true,
-    default: 3 // Default to TEXT_RESPONSE (id: 3)
+    default: 1 
   },
   isRoot: {
     type: Boolean,
@@ -71,7 +71,7 @@ const ChatbotWorkflow = mongoose.model('ChatbotWorkflow', chatbotWorkflowSchema)
 const workflowValidationSchema = Joi.object({
   title: Joi.string().max(200).required(),
   question: Joi.string().max(500).required(),
-  questionTypeId: Joi.number().integer().min(1).default(3), // Numeric ID from QuestionType table
+  questionTypeId: Joi.number().integer().min(1).default(1), 
   workflowGroupId: Joi.string().allow(null, '').optional(),
   isRoot: Joi.boolean().optional(),
   isActive: Joi.boolean().optional(),

@@ -21,7 +21,7 @@ router.get('/health', (req, res) => {
 // Helper function to validate questionType ID exists
 async function validateQuestionTypeId(questionTypeId) {
   if (!questionTypeId) {
-    return 3; // Default to TEXT_RESPONSE (id: 3)
+    return 1; // Default to TEXT_RESPONSE (id: 1)
   }
   
   const questionType = await QuestionType.findOne({ id: questionTypeId, isActive: true });
