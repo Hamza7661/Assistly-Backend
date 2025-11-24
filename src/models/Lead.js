@@ -39,15 +39,13 @@ const leadCreateSchema = Joi.object({
   leadName: Joi.string().max(150).allow(null, '').optional(),
   leadPhoneNumber: Joi.string().max(50).allow(null, '').optional(),
   leadEmail: Joi.string().max(200).allow(null, '').custom((value, helpers) => {
-    if (!value || value === '') return value; // Allow null/empty
+    if (!value || value === '') return null; // Return null for empty values
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(value)) {
-      return helpers.error('string.email');
+      return null; // Return null instead of error for invalid emails
     }
     return value;
-  }).optional().messages({
-    'string.email': 'Please enter a valid email address'
-  }),
+  }).optional(),
   leadType: Joi.string().allow(null, '').optional(),
   serviceType: Joi.string().allow(null, '').optional(),
   history: Joi.array().items(
@@ -75,15 +73,13 @@ const leadUpdateSchema = Joi.object({
   leadName: Joi.string().max(150).allow(null, '').optional(),
   leadPhoneNumber: Joi.string().max(50).allow(null, '').optional(),
   leadEmail: Joi.string().max(200).allow(null, '').custom((value, helpers) => {
-    if (!value || value === '') return value; // Allow null/empty
+    if (!value || value === '') return null; // Return null for empty values
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(value)) {
-      return helpers.error('string.email');
+      return null; // Return null instead of error for invalid emails
     }
     return value;
-  }).optional().messages({
-    'string.email': 'Please enter a valid email address'
-  }),
+  }).optional(),
   leadType: Joi.string().allow(null, '').optional(),
   serviceType: Joi.string().allow(null, '').optional(),
   history: Joi.array().items(
