@@ -30,7 +30,8 @@ class IntegrationController {
             filename: null
           },
           assistantName: 'Assistant',
-          greeting: process.env.DEFAULT_GREETING || 'Hello! How can I help you today?',
+          companyName: '',
+          greeting: process.env.DEFAULT_GREETING || 'Hi this is {assistantName} your virtual ai assistant from {companyName}. How can I help you today?',
           primaryColor: process.env.DEFAULT_PRIMARY_COLOR || '#3B82F6',
           validateEmail: true,
           validatePhoneNumber: true
@@ -58,6 +59,7 @@ class IntegrationController {
               data: null
             },
             assistantName: integration.assistantName,
+            companyName: integration.companyName,
             greeting: integration.greeting,
             primaryColor: integration.primaryColor,
             validateEmail: integration.validateEmail,
@@ -92,6 +94,7 @@ class IntegrationController {
       // Validate input
       const { error, value } = integrationUpdateValidationSchema.validate(updateData);
       if (error) {
+        logger.error('Validation error:', { error: error.details, updateData: Object.keys(updateData) });
         return next(new AppError(error.details[0].message, 400));
       }
 
@@ -135,6 +138,7 @@ class IntegrationController {
               data: null
             },
             assistantName: integration.assistantName,
+            companyName: integration.companyName,
             greeting: integration.greeting,
             primaryColor: integration.primaryColor,
             validateEmail: integration.validateEmail,
@@ -174,6 +178,7 @@ class IntegrationController {
             filename: null
           },
           assistantName: 'Assistant',
+          companyName: '',
           greeting: process.env.DEFAULT_GREETING || 'Hello! How can I help you today?',
           primaryColor: process.env.DEFAULT_PRIMARY_COLOR || '#3B82F6'
         };

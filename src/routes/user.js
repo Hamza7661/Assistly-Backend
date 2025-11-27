@@ -302,12 +302,14 @@ class UserController {
       // Prepare integration data
       const integrationData = integration ? {
         assistantName: integration.assistantName,
+        companyName: integration.companyName || '',
         greeting: integration.greeting,
         validateEmail: integration.validateEmail,
         validatePhoneNumber: integration.validatePhoneNumber
       } : {
         assistantName: 'Assistant',
-        greeting: process.env.DEFAULT_GREETING || 'Hello! How can I help you today?',
+        companyName: '',
+        greeting: process.env.DEFAULT_GREETING || 'Hi this is {assistantName} your virtual ai assistant from {companyName}. How can I help you today?',
         validateEmail: true,
         validatePhoneNumber: true
       };
@@ -548,12 +550,14 @@ class UserController {
       // Prepare integration data
       const integrationData = integration ? {
         assistantName: integration.assistantName,
+        companyName: integration.companyName || '',
         greeting: integration.greeting,
         validateEmail: integration.validateEmail,
         validatePhoneNumber: integration.validatePhoneNumber
       } : {
         assistantName: 'Assistant',
-        greeting: process.env.DEFAULT_GREETING || 'Hello! How can I help you today?',
+        companyName: '',
+        greeting: process.env.DEFAULT_GREETING || 'Hi this is {assistantName} your virtual ai assistant from {companyName}. How can I help you today?',
         validateEmail: true,
         validatePhoneNumber: true
       };
