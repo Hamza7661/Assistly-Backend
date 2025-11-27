@@ -36,9 +36,15 @@ const integrationSchema = new mongoose.Schema({
     maxlength: 50,
     trim: true
   },
+  companyName: {
+    type: String,
+    default: '',
+    maxlength: 100,
+    trim: true
+  },
   greeting: {
     type: String,
-    default: process.env.DEFAULT_GREETING || 'Hello! How can I help you today?',
+    default: process.env.DEFAULT_GREETING || 'Hi this is {assistantName} your virtual ai assistant from {companyName}. How can I help you today?',
     maxlength: 500,
     trim: true
   },
@@ -71,6 +77,7 @@ integrationSchema.index({ owner: 1 }, { unique: true });
 // Joi validation schemas
 const integrationValidationSchema = Joi.object({
   assistantName: Joi.string().max(50).allow('', null).optional(),
+  companyName: Joi.string().max(100).allow('', null).optional(),
   greeting: Joi.string().max(500).allow('', null).optional(),
   primaryColor: Joi.string().allow('', null).custom((value, helpers) => {
     if (!value || value === '') return value; // Allow empty strings
@@ -85,6 +92,7 @@ const integrationValidationSchema = Joi.object({
 
 const integrationUpdateValidationSchema = Joi.object({
   assistantName: Joi.string().max(50).allow('', null).optional(),
+  companyName: Joi.string().max(100).allow('', null).optional(),
   greeting: Joi.string().max(500).allow('', null).optional(),
   primaryColor: Joi.string().allow('', null).custom((value, helpers) => {
     if (!value || value === '') return value; // Allow empty strings
