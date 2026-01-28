@@ -16,12 +16,21 @@ const errorHandler = (err, req, res, next) => {
   err.status = err.status || 'error';
 
   // Log error
+  // Safely get IP address - handle cases where trust proxy is not set
+  let clientIp = null;
+  try {
+    clientIp = req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress;
+  } catch (error) {
+    // Fallback if req.ip fails (e.g., trust proxy not configured)
+    clientIp = req.connection?.remoteAddress || req.socket?.remoteAddress || 'unknown';
+  }
+  
   logger.error('Error occurred:', {
     message: err.message,
     stack: err.stack,
     url: req.url,
     method: req.method,
-    ip: req.ip,
+    ip: clientIp,
     userAgent: req.get('User-Agent')
   });
 

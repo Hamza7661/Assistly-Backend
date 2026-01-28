@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const dns = require('dns');
 const { logger } = require('../utils/logger');
 
 class DatabaseManager {
@@ -30,16 +31,39 @@ class DatabaseManager {
         return this.connection;
       }
 
+      // Configure DNS servers if specified in environment
+      if (process.env.DNS_SERVERS) {
+        const dnsServers = process.env.DNS_SERVERS.split(',').map(s => s.trim());
+        dns.setServers(dnsServers);
+        logger.info(`DNS servers configured: ${dnsServers.join(', ')}`);
+      }
+
       const options = this.getConnectionOptions();
-      const uri = process.env.MONGODB_URI;
+      let uri = process.env.MONGODB_URI;
 
       if (!uri) {
         throw new Error('MONGODB_URI environment variable is required');
       }
 
+      // If using SRV connection and DNS resolution fails, try converting to standard format
+      // Check if MONGODB_URI_STANDARD is provided as fallback
+      const standardUri = process.env.MONGODB_URI_STANDARD;
+      
       logger.info('Connecting to MongoDB...');
       
-      this.connection = await mongoose.connect(uri, options);
+      try {
+        this.connection = await mongoose.connect(uri, options);
+      } catch (srvError) {
+        // If SRV connection fails with DNS error and standard URI is available, try that
+        if (srvError.message && (srvError.message.includes('ECONNREFUSED') || srvError.message.includes('ENOTFOUND') || srvError.message.includes('querySrv')) && standardUri) {
+          logger.warn('SRV connection failed due to DNS issues, attempting standard connection string...');
+          uri = standardUri;
+          this.connection = await mongoose.connect(uri, options);
+        } else {
+          throw srvError;
+        }
+      }
+      
       this.isConnected = true;
       this.retryAttempts = 0;
 

@@ -12,6 +12,7 @@ const websocketServer = require('./utils/websocketServer');
 
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/user');
+const appRoutes = require('./routes/apps');
 const packageRoutes = require('./routes/packages');
 const emailRoutes = require('./routes/email');
 // const faqRoutes = require('./routes/faq');
@@ -38,6 +39,12 @@ class Application {
   }
 
   initializeMiddleware() {
+    // Configure trust proxy setting for req.ip to work properly
+    // Set to true if behind a reverse proxy (nginx, load balancer, etc.)
+    // Set to false or specific IPs if not behind a proxy
+    const trustProxy = process.env.TRUST_PROXY === 'true' || process.env.TRUST_PROXY === '1';
+    this.app.set('trust proxy', trustProxy);
+    
     securityMiddleware.applySecurityMiddleware(this.app);
     
     if (!this.isProduction) {
@@ -62,6 +69,7 @@ class Application {
 
     this.app.use(`${basePath}/auth`, securityMiddleware.getRateLimiters().auth, authRoutes);
     this.app.use(`${basePath}/users`, securityMiddleware.getRateLimiters().api, userRoutes);
+    this.app.use(`${basePath}/apps`, securityMiddleware.getRateLimiters().api, appRoutes);
     this.app.use(`${basePath}/packages`, securityMiddleware.getRateLimiters().api, packageRoutes);
     this.app.use(`${basePath}/email`, securityMiddleware.getRateLimiters().api, emailRoutes);
     // this.app.use(`${basePath}/faq`, securityMiddleware.getRateLimiters().api, faqRoutes);

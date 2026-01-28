@@ -3,7 +3,7 @@ const Joi = require('joi');
 const { LEAD_TYPES_VALUES } = require('../enums/leadTypes');
 
 const leadSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  appId: { type: mongoose.Schema.Types.ObjectId, ref: 'App', required: false, index: true }, // Required for new leads, optional for migration
   title: { type: String, trim: true, default: null, maxlength: 200 },
   summary: { type: String, trim: true, default: null, maxlength: 500 },
   description: { type: String, trim: true, default: null, maxlength: 5000 },
@@ -21,7 +21,8 @@ const leadSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 }, { timestamps: true });
 
-leadSchema.index({ userId: 1, createdAt: -1 });
+leadSchema.index({ appId: 1, createdAt: -1 });
+leadSchema.index({ userId: 1, createdAt: -1 }); // Legacy index
 
 leadSchema.pre('save', function(next) {
   const now = new Date();

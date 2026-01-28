@@ -431,10 +431,10 @@ const userValidationSchema = Joi.object({
   
   industry: Joi.string()
     .valid('healthcare', 'dental', 'legal', 'real-estate', 'finance', 'education', 'retail', 'hospitality', 'fitness', 'beauty', 'automotive', 'consulting', 'technology', 'food', 'other')
-    .required()
+    .optional()
+    .allow(null, '')
     .messages({
-      'any.only': 'Please select a valid industry',
-      'any.required': 'Industry is required'
+      'any.only': 'Please select a valid industry'
     }),
   
       region: Joi.string()

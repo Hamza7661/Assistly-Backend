@@ -1,11 +1,82 @@
 const express = require('express');
 const { AppError } = require('../utils/errorHandler');
 const { authenticateToken, requireUserOrAdmin } = require('../middleware/auth');
+const { verifyAppOwnership } = require('../middleware/appOwnership');
 const { Appointment, appointmentCreateSchema, appointmentQuerySchema, appointmentUpdateSchema } = require('../models/Appointment');
 
 const router = express.Router();
 
-// Create appointment for current user
+// Create appointment for app - NEW APP-SCOPED ROUTE
+router.post('/apps/:appId', authenticateToken, verifyAppOwnership, async (req, res, next) => {
+  try {
+    const { error, value } = appointmentCreateSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
+    if (error) {
+      const messages = error.details.map(d => d.message);
+      throw new AppError(`Validation failed: ${messages.join(', ')}`, 400);
+    }
+    const appId = req.appId;
+    const appt = new Appointment({ owner: appId, ...value });
+    await appt.save();
+    res.status(201).json({ status: 'success', message: 'Appointment created', data: { appointment: appt } });
+  } catch (err) { next(err); }
+});
+
+// List appointments for app - NEW APP-SCOPED ROUTE
+router.get('/apps/:appId', authenticateToken, verifyAppOwnership, async (req, res, next) => {
+  try {
+    const appId = req.appId;
+    if (!appId) return next(new AppError('App ID is required', 400));
+
+    const { error, value } = appointmentQuerySchema.validate(req.query, { abortEarly: false, stripUnknown: true });
+    if (error) {
+      const messages = error.details.map(d => d.message);
+      throw new AppError(`Validation failed: ${messages.join(', ')}`, 400);
+    }
+
+    const conditions = [ { owner: appId } ];
+    if (value.from || value.to) {
+      const range = {};
+      if (value.from) range.$gte = new Date(value.from);
+      if (value.to) range.$lte = new Date(value.to);
+      conditions.push({ startAt: range });
+    }
+    if (value.q && String(value.q).trim().length > 0) {
+      const needle = String(value.q).trim();
+      const rx = new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      conditions.push({ $or: [ { title: rx }, { description: rx } ] });
+    }
+    const filter = conditions.length > 1 ? { $and: conditions } : conditions[0];
+
+    const page = value.page;
+    const limit = value.limit;
+    const skip = (page - 1) * limit;
+
+    const sort = {};
+    sort[value.sortBy] = value.sortOrder === 'desc' ? -1 : 1;
+
+    const [items, total] = await Promise.all([
+      Appointment.find(filter).sort(sort).skip(skip).limit(limit).exec(),
+      Appointment.countDocuments(filter)
+    ]);
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        appointments: items,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+          hasNextPage: skip + items.length < total,
+          hasPrevPage: page > 1
+        }
+      }
+    });
+  } catch (err) { next(err); }
+});
+
+// Create appointment for current user - LEGACY ROUTE
 router.post('/', authenticateToken, requireUserOrAdmin, async (req, res, next) => {
   try {
     const { error, value } = appointmentCreateSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
