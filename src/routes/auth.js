@@ -52,7 +52,7 @@ class AuthController {
         throw new AppError(`Validation failed: ${errorMessages.join(', ')}`, 400);
       }
 
-      const { firstName, lastName, phoneNumber, email, professionDescription, industry, region, package: packageId, password, website } = value;
+      const { firstName, lastName, phoneNumber, email, professionDescription, region, package: packageId, password, website } = value;
 
       const existingUserByEmail = await User.findByEmail(email);
       if (existingUserByEmail) {
@@ -70,14 +70,20 @@ class AuthController {
         phoneNumber,
         email,
         professionDescription,
-        industry,
+        // Industry is no longer set during signup - will be set when creating apps
         region: region || 'uk',
         password,
         website,
         metadata: {
           signupSource: req.headers['x-signup-source'] || 'web',
           userAgent: req.headers['user-agent'],
-          ipAddress: req.ip || req.connection.remoteAddress,
+          ipAddress: (() => {
+            try {
+              return req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || 'unknown';
+            } catch (error) {
+              return req.connection?.remoteAddress || req.socket?.remoteAddress || 'unknown';
+            }
+          })(),
           referrer: req.headers.referer
         }
       };

@@ -1,10 +1,11 @@
 const mongoose = require('mongoose');
 const Joi = require('joi');
+const { LEAD_TYPES_LIST } = require('../enums/leadTypes');
 
 const integrationSchema = new mongoose.Schema({
   owner: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
+    ref: 'App',
     required: true,
     index: true
   },
@@ -66,13 +67,52 @@ const integrationSchema = new mongoose.Schema({
   validatePhoneNumber: {
     type: Boolean,
     default: true
-  }
+  },
+  leadTypeMessages: [{
+    id: {
+      type: Number,
+      required: true
+    },
+    value: {
+      type: String,
+      required: true,
+      trim: true
+    },
+    text: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: [200, 'Lead type text cannot exceed 200 characters']
+    },
+    isActive: {
+      type: Boolean,
+      default: true
+    },
+    order: {
+      type: Number,
+      default: 0
+    }
+  }]
 }, {
   timestamps: true
 });
 
-// Ensure one integration per user
+// Ensure one integration per app
 integrationSchema.index({ owner: 1 }, { unique: true });
+
+// Set default leadTypeMessages if not provided
+integrationSchema.pre('save', function(next) {
+  if (!this.leadTypeMessages || this.leadTypeMessages.length === 0) {
+    this.leadTypeMessages = LEAD_TYPES_LIST.map((lt, index) => ({
+      id: lt.id,
+      value: lt.value,
+      text: lt.text,
+      isActive: true,
+      order: index
+    }));
+  }
+  next();
+});
 
 // Joi validation schemas
 const integrationValidationSchema = Joi.object({
@@ -87,7 +127,16 @@ const integrationValidationSchema = Joi.object({
     'string.pattern.base': 'Primary color must be a valid hex color (e.g., #3B82F6) or empty'
   }),
   validateEmail: Joi.boolean().optional(),
-  validatePhoneNumber: Joi.boolean().optional()
+  validatePhoneNumber: Joi.boolean().optional(),
+  leadTypeMessages: Joi.array().items(
+    Joi.object({
+      id: Joi.number().integer().required(),
+      value: Joi.string().required(),
+      text: Joi.string().max(200).required(),
+      isActive: Joi.boolean().optional().default(true),
+      order: Joi.number().integer().optional().default(0)
+    })
+  ).optional()
 });
 
 const integrationUpdateValidationSchema = Joi.object({
@@ -102,7 +151,16 @@ const integrationUpdateValidationSchema = Joi.object({
     'string.pattern.base': 'Primary color must be a valid hex color (e.g., #3B82F6) or empty'
   }),
   validateEmail: Joi.boolean().optional(),
-  validatePhoneNumber: Joi.boolean().optional()
+  validatePhoneNumber: Joi.boolean().optional(),
+  leadTypeMessages: Joi.array().items(
+    Joi.object({
+      id: Joi.number().integer().required(),
+      value: Joi.string().required(),
+      text: Joi.string().max(200).required(),
+      isActive: Joi.boolean().optional().default(true),
+      order: Joi.number().integer().optional().default(0)
+    })
+  ).optional()
 }).min(1);
 
 const Integration = mongoose.model('Integration', integrationSchema);

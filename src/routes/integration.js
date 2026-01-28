@@ -5,25 +5,24 @@ const { logger } = require('../utils/logger');
 const { AppError } = require('../utils/errorHandler');
 const { authenticateToken, requireUserOrAdmin } = require('../middleware/auth');
 const { verifySignedThirdPartyForParamUser } = require('../middleware/thirdParty');
+const { verifyAppOwnership } = require('../middleware/appOwnership');
 const { uploadSingle } = require('../middleware/upload');
 
 class IntegrationController {
   async getIntegration(req, res, next) {
     try {
-      const { id } = req.params;
-      const userId = id || req.user.id;
-
-
-      if (!userId) {
-        return next(new AppError('User ID is required', 400));
+      const appId = req.appId || req.params.appId;
+      
+      if (!appId) {
+        return next(new AppError('App ID is required', 400));
       }
 
-      let integration = await Integration.findOne({ owner: userId });
+      let integration = await Integration.findOne({ owner: appId });
 
       // Create default integration if none exists
       if (!integration) {
         integration = new Integration({
-          owner: userId,
+          owner: appId,
           chatbotImage: {
             data: null,
             contentType: null,
@@ -39,7 +38,7 @@ class IntegrationController {
         await integration.save();
       } 
 
-      logger.info('Retrieved integration settings', { userId });
+      logger.info('Retrieved integration settings', { appId });
 
       const responseData = {
         status: 'success',
@@ -64,6 +63,7 @@ class IntegrationController {
             primaryColor: integration.primaryColor,
             validateEmail: integration.validateEmail,
             validatePhoneNumber: integration.validatePhoneNumber,
+            leadTypeMessages: integration.leadTypeMessages || [],
             createdAt: integration.createdAt,
             updatedAt: integration.updatedAt
           }
@@ -83,16 +83,37 @@ class IntegrationController {
 
   async updateIntegration(req, res, next) {
     try {
-      const { id } = req.params;
-      const userId = id || req.user.id;
-      const updateData = req.body;
+      const appId = req.appId || req.params.appId;
+      let updateData = { ...req.body };
 
-      if (!userId) {
-        return next(new AppError('User ID is required', 400));
+      if (!appId) {
+        return next(new AppError('App ID is required', 400));
+      }
+
+      // Handle leadTypeMessages from FormData (it comes as a JSON string)
+      if (updateData.leadTypeMessages && typeof updateData.leadTypeMessages === 'string') {
+        try {
+          updateData.leadTypeMessages = JSON.parse(updateData.leadTypeMessages);
+        } catch (e) {
+          logger.error('Failed to parse leadTypeMessages', { error: e });
+          // If parsing fails, remove it from updateData so validation can handle it
+          delete updateData.leadTypeMessages;
+        }
+      }
+
+      // Strip _id fields from leadTypeMessages before validation (Mongoose adds these but we don't need them)
+      if (updateData.leadTypeMessages && Array.isArray(updateData.leadTypeMessages)) {
+        updateData.leadTypeMessages = updateData.leadTypeMessages.map(msg => {
+          const { _id, ...rest } = msg;
+          return rest;
+        });
       }
 
       // Validate input
-      const { error, value } = integrationUpdateValidationSchema.validate(updateData);
+      const { error, value } = integrationUpdateValidationSchema.validate(updateData, {
+        stripUnknown: true,
+        abortEarly: false
+      });
       if (error) {
         logger.error('Validation error:', { error: error.details, updateData: Object.keys(updateData) });
         return next(new AppError(error.details[0].message, 400));
@@ -108,7 +129,7 @@ class IntegrationController {
       }
 
       const integration = await Integration.findOneAndUpdate(
-        { owner: userId },
+        { owner: appId },
         value,
         { 
           new: true, 
@@ -118,7 +139,7 @@ class IntegrationController {
         }
       );
 
-      logger.info('Updated integration settings', { userId, updatedFields: Object.keys(value) });
+      logger.info('Updated integration settings', { appId, updatedFields: Object.keys(value) });
 
       res.status(200).json({
         status: 'success',
@@ -143,6 +164,7 @@ class IntegrationController {
             primaryColor: integration.primaryColor,
             validateEmail: integration.validateEmail,
             validatePhoneNumber: integration.validatePhoneNumber,
+            leadTypeMessages: integration.leadTypeMessages || [],
             createdAt: integration.createdAt,
             updatedAt: integration.updatedAt
           }
@@ -150,7 +172,7 @@ class IntegrationController {
       });
     } catch (error) {
       if (error.name === 'CastError') {
-        return next(new AppError('Invalid user ID format', 400));
+        return next(new AppError('Invalid app ID format', 400));
       }
       if (error.name === 'ValidationError') {
         return next(new AppError(error.message, 400));
@@ -161,13 +183,13 @@ class IntegrationController {
 
   async getPublicIntegration(req, res, next) {
     try {
-      const { id } = req.params;
+      const appId = req.params.appId || req.params.id;
 
-      if (!id) {
-        return next(new AppError('User ID is required', 400));
+      if (!appId) {
+        return next(new AppError('App ID is required', 400));
       }
 
-      let integration = await Integration.findOne({ owner: id });
+      let integration = await Integration.findOne({ owner: appId });
 
       // Return default values if no integration exists
       if (!integration) {
@@ -201,7 +223,8 @@ class IntegrationController {
             },
             assistantName: integration.assistantName,
             greeting: integration.greeting,
-            primaryColor: integration.primaryColor
+            primaryColor: integration.primaryColor,
+            leadTypeMessages: integration.leadTypeMessages || []
           }
         }
       });
@@ -215,14 +238,13 @@ class IntegrationController {
 
   async getChatbotImage(req, res, next) {
     try {
-      const { id } = req.params;
-      const userId = id || req.user.id;
+      const appId = req.appId || req.params.appId;
 
-      if (!userId) {
-        return next(new AppError('User ID is required', 400));
+      if (!appId) {
+        return next(new AppError('App ID is required', 400));
       }
 
-      const integration = await Integration.findOne({ owner: userId });
+      const integration = await Integration.findOne({ owner: appId });
 
       if (!integration || !integration.chatbotImage.data) {
         return next(new AppError('Chatbot image not found', 404));
@@ -246,16 +268,12 @@ class IntegrationController {
 
 const integrationController = new IntegrationController();
 
-// Authenticated routes
-router.get('/me', authenticateToken, integrationController.getIntegration);
-router.put('/me', authenticateToken, uploadSingle('chatbotImage'), integrationController.updateIntegration);
-router.get('/me/image', authenticateToken, integrationController.getChatbotImage);
-router.get('/user/:id', authenticateToken, requireUserOrAdmin, integrationController.getIntegration);
-router.put('/user/:id', authenticateToken, requireUserOrAdmin, uploadSingle('chatbotImage'), integrationController.updateIntegration);
-router.get('/user/:id/image', authenticateToken, requireUserOrAdmin, integrationController.getChatbotImage);
+// Routes with appId parameter (new structure)
+router.get('/apps/:appId', authenticateToken, verifyAppOwnership, integrationController.getIntegration);
+router.put('/apps/:appId', authenticateToken, verifyAppOwnership, uploadSingle('chatbotImage'), integrationController.updateIntegration);
+router.get('/apps/:appId/image', authenticateToken, verifyAppOwnership, integrationController.getChatbotImage);
 
-// Public routes (HMAC protected)
-router.get('/public/:id', verifySignedThirdPartyForParamUser, integrationController.getPublicIntegration);
-router.get('/public/:id/me', verifySignedThirdPartyForParamUser, integrationController.getIntegration);
+// Public routes (HMAC protected) - for widget access
+router.get('/public/apps/:appId', verifySignedThirdPartyForParamUser, integrationController.getPublicIntegration);
 
 module.exports = router;

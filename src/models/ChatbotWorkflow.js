@@ -5,7 +5,7 @@ const Joi = require('joi');
 const chatbotWorkflowSchema = new mongoose.Schema({
   owner: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
+    ref: 'App',
     required: true,
     index: true
   },

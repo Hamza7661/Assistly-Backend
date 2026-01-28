@@ -8,7 +8,7 @@ const slotSchema = new mongoose.Schema({
 }, { _id: false });
 
 const availabilitySchema = new mongoose.Schema({
-  owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  owner: { type: mongoose.Schema.Types.ObjectId, ref: 'App', required: true, index: true },
   timezone: { type: String, default: 'UTC' },
   dayOfWeek: { type: Number, min: 0, max: 6, required: true, index: true },
   slots: { type: [slotSchema], default: [] },

@@ -1,12 +1,73 @@
 const express = require('express');
 const { AppError } = require('../utils/errorHandler');
 const { authenticateToken, requireUserOrAdmin } = require('../middleware/auth');
+const { verifyAppOwnership } = require('../middleware/appOwnership');
 const { verifySignedThirdPartyForParamUser } = require('../middleware/thirdParty');
 const { Availability, availabilityUpsertSchema, availabilityBulkSchema } = require('../models/Availability');
 
 const router = express.Router();
 
-// Upsert availability for current user by dayOfWeek
+// Upsert availability for app by dayOfWeek - NEW APP-SCOPED ROUTE
+router.put('/apps/:appId', authenticateToken, verifyAppOwnership, async (req, res, next) => {
+  try {
+    const { error, value } = availabilityUpsertSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
+    if (error) {
+      const messages = error.details.map(d => d.message);
+      throw new AppError(`Validation failed: ${messages.join(', ')}`, 400);
+    }
+    const { dayOfWeek, slots, allDay } = value;
+    const appId = req.appId;
+
+    const defaultAllDay = (dayOfWeek !== 0 && dayOfWeek !== 6);
+    const effectiveAllDay = (typeof allDay === 'boolean') ? allDay : defaultAllDay;
+    const update = {
+      $set: { slots, allDay: effectiveAllDay },
+      $setOnInsert: { owner: appId, dayOfWeek }
+    };
+    const doc = await Availability.findOneAndUpdate(
+      { owner: appId, dayOfWeek },
+      update,
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    );
+
+    res.status(200).json({ status: 'success', message: 'Availability saved', data: { availability: doc } });
+  } catch (err) { next(err); }
+});
+
+// Get availability for app - NEW APP-SCOPED ROUTE
+router.get('/apps/:appId', authenticateToken, verifyAppOwnership, async (req, res, next) => {
+  try {
+    const appId = req.appId;
+    if (!appId) return next(new AppError('App ID is required', 400));
+
+    const existing = await Availability.find({ owner: appId }).sort({ dayOfWeek: 1 }).exec();
+
+    // Ensure 7 days exist by default
+    const present = new Set(existing.map(d => d.dayOfWeek));
+    const toCreate = [];
+    const tz = (existing[0] && existing[0].timezone) || 'UTC';
+    for (let d = 0; d <= 6; d++) {
+      if (!present.has(d)) {
+        const isWeekend = (d === 0) || (d === 6);
+        const defaultAllDay = !isWeekend;
+        toCreate.push({ owner: appId, dayOfWeek: d, timezone: tz, slots: [], allDay: defaultAllDay });
+      }
+    }
+    if (toCreate.length > 0) {
+      await Availability.insertMany(toCreate);
+    }
+
+    const items = await Availability.find({ owner: appId }).sort({ dayOfWeek: 1 }).exec();
+    const ordered = items.slice().sort((a, b) => {
+      const ak = a.dayOfWeek === 0 ? 7 : a.dayOfWeek;
+      const bk = b.dayOfWeek === 0 ? 7 : b.dayOfWeek;
+      return ak - bk;
+    });
+    res.status(200).json({ status: 'success', data: { availability: ordered } });
+  } catch (err) { next(err); }
+});
+
+// Upsert availability for current user by dayOfWeek - LEGACY ROUTE
 router.put('/', authenticateToken, requireUserOrAdmin, async (req, res, next) => {
   try {
     const { error, value } = availabilityUpsertSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
@@ -33,7 +94,7 @@ router.put('/', authenticateToken, requireUserOrAdmin, async (req, res, next) =>
   } catch (err) { next(err); }
 });
 
-// Get my availability
+// Get my availability - LEGACY ROUTE
 router.get('/user/:id', authenticateToken, requireUserOrAdmin, async (req, res, next) => {
   try {
     const { id } = req.params;

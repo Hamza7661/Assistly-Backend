@@ -60,12 +60,22 @@ const logRequest = (req, res, next) => {
   
   res.on('finish', () => {
     const duration = Date.now() - start;
+    
+    // Safely get IP address - handle cases where trust proxy is not set
+    let clientIp = null;
+    try {
+      clientIp = req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress;
+    } catch (error) {
+      // Fallback if req.ip fails (e.g., trust proxy not configured)
+      clientIp = req.connection?.remoteAddress || req.socket?.remoteAddress || 'unknown';
+    }
+    
     logger.info('HTTP Request', {
       method: req.method,
       url: req.url,
       statusCode: res.statusCode,
       duration: `${duration}ms`,
-      ip: req.ip || req.connection.remoteAddress,
+      ip: clientIp,
       userAgent: req.get('User-Agent')
     });
   });

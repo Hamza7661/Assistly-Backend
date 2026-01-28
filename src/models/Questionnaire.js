@@ -5,7 +5,7 @@ const { QUESTIONNAIRE_TYPES } = require('../enums/questionnaireTypes');
 const questionnaireSchema = new mongoose.Schema({
   owner: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
+    ref: 'App',
     required: true,
     index: true
   },

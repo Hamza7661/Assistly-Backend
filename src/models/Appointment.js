@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const Joi = require('joi');
 
 const appointmentSchema = new mongoose.Schema({
-  owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  owner: { type: mongoose.Schema.Types.ObjectId, ref: 'App', required: true, index: true },
   title: { type: String, trim: true, default: '' },
   description: { type: String, trim: true, default: '' },
   startAt: { type: Date, required: true, index: true },
