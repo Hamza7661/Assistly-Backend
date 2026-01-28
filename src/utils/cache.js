@@ -127,6 +127,11 @@ class CacheManager {
     return `user_context:${userId}`;
   }
 
+  // Generate cache key for app context (widget/WebSocket by app_id)
+  getAppContextKey(appId) {
+    return `app_context:${appId}`;
+  }
+
   // Generate cache key for integration
   getIntegrationKey(userId) {
     return `user_integration:${userId}`;
