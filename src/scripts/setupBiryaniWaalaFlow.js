@@ -274,12 +274,12 @@ async function run() {
     if (!rootId) continue;
     const existing = await Questionnaire.findOne({
       owner: appId,
-      type: QUESTIONNAIRE_TYPES.TREATMENT_PLAN,
+      type: QUESTIONNAIRE_TYPES.SERVICE_PLAN,
       question: plan.question
     });
     const doc = {
       owner: appId,
-      type: QUESTIONNAIRE_TYPES.TREATMENT_PLAN,
+      type: QUESTIONNAIRE_TYPES.SERVICE_PLAN,
       question: plan.question,
       answer: plan.answer,
       isActive: true,

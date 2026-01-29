@@ -58,6 +58,21 @@ const appSchema = new mongoose.Schema({
     trim: true,
     default: null
   },
+  twilioPhoneNumber: {
+    type: String,
+    trim: true,
+    default: null,
+    validate: {
+      validator: function(v) {
+        if (!v) return true; // Allow null/empty
+        // E.164 format validation
+        return /^\+[1-9]\d{1,14}$/.test(v);
+      },
+      message: 'Twilio phone number must be in E.164 format (e.g., +1234567890)'
+    },
+    index: true,
+    sparse: true // Allow multiple null values, but unique when not null
+  },
   isActive: {
     type: Boolean,
     default: true,
@@ -86,6 +101,7 @@ appSchema.index({ owner: 1 });
 // Unique index only for active apps - allows reusing names from deleted apps
 appSchema.index({ owner: 1, name: 1 }, { unique: true, partialFilterExpression: { isActive: true } });
 appSchema.index({ whatsappNumber: 1 }, { unique: true, sparse: true });
+appSchema.index({ twilioPhoneNumber: 1 }, { unique: true, sparse: true });
 appSchema.index({ isActive: 1 });
 appSchema.index({ createdAt: -1 });
 
@@ -93,6 +109,11 @@ appSchema.pre('save', function(next) {
   this.updatedAt = new Date();
   next();
 });
+
+// Static methods
+appSchema.statics.findByTwilioPhone = function(twilioPhoneNumber) {
+  return this.findOne({ twilioPhoneNumber, isActive: true });
+};
 
 const App = mongoose.model('App', appSchema);
 
@@ -137,6 +158,14 @@ const appValidationSchema = Joi.object({
     .allow(null, '')
     .messages({
       'string.pattern.base': 'WhatsApp number must be in E.164 format (e.g., +1234567890)'
+    }),
+  
+  twilioPhoneNumber: Joi.string()
+    .pattern(/^\+[1-9]\d{1,14}$/)
+    .optional()
+    .allow(null, '')
+    .messages({
+      'string.pattern.base': 'Twilio phone number must be in E.164 format (e.g., +1234567890)'
     })
 });
 
@@ -184,6 +213,14 @@ const appUpdateValidationSchema = Joi.object({
   twilioWhatsAppSenderId: Joi.string()
     .optional()
     .allow(null, ''),
+  
+  twilioPhoneNumber: Joi.string()
+    .pattern(/^\+[1-9]\d{1,14}$/)
+    .optional()
+    .allow(null, '')
+    .messages({
+      'string.pattern.base': 'Twilio phone number must be in E.164 format (e.g., +1234567890)'
+    }),
   
   isActive: Joi.boolean()
     .optional()

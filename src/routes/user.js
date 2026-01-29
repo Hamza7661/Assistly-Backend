@@ -81,7 +81,7 @@ class UserController {
         .sort({ updatedAt: -1 })
         .exec();
 
-      const treatmentPromise = Questionnaire.find({ owner: id, type: QUESTIONNAIRE_TYPES.TREATMENT_PLAN, isActive: true })
+      const treatmentPromise = Questionnaire.find({ owner: id, type: QUESTIONNAIRE_TYPES.SERVICE_PLAN, isActive: true })
         .select('question answer')
         .sort({ updatedAt: -1 })
         .exec();
@@ -138,7 +138,7 @@ class UserController {
         .select('firstName lastName professionDescription website')
         .exec();
 
-      const treatmentPromise = Questionnaire.find({ owner: id, type: QUESTIONNAIRE_TYPES.TREATMENT_PLAN, isActive: true })
+      const treatmentPromise = Questionnaire.find({ owner: id, type: QUESTIONNAIRE_TYPES.SERVICE_PLAN, isActive: true })
         .select('question answer attachedWorkflows')
         .populate('attachedWorkflows.workflowId', 'title question questionTypeId isRoot order')
         .sort({ updatedAt: -1 })
@@ -384,7 +384,7 @@ class UserController {
       }
       const user = app.owner;
 
-      const treatmentPromise = Questionnaire.find({ owner: appId, type: QUESTIONNAIRE_TYPES.TREATMENT_PLAN, isActive: true })
+      const treatmentPromise = Questionnaire.find({ owner: appId, type: QUESTIONNAIRE_TYPES.SERVICE_PLAN, isActive: true })
         .select('question answer attachedWorkflows')
         .populate('attachedWorkflows.workflowId', 'title question questionTypeId isRoot order')
         .sort({ updatedAt: -1 })
@@ -590,49 +590,49 @@ class UserController {
         return next(new AppError('Twilio phone number is required', 400));
       }
 
-      // First, find the user by Twilio phone number
-      const user = await User.findByTwilioPhone(twilioPhoneNumber)
-        .select('_id firstName lastName professionDescription website')
+      // Find the app directly by Twilio phone number
+      const App = require('../models/App');
+      const app = await App.findByTwilioPhone(twilioPhoneNumber)
+        .populate('owner', 'firstName lastName professionDescription website')
+        .select('_id name industry owner')
         .exec();
 
-      if (!user) {
-        return next(new AppError('User not found with this Twilio phone number', 404));
+      if (!app || !app.owner) {
+        return next(new AppError('No app found with this Twilio phone number. Please assign the Twilio number to an app using the migration script.', 404));
       }
 
+      const user = app.owner;
+      const appId = app._id;
       const userId = user._id;
 
       // Check cache first
-      const cacheKey = cacheManager.getUserContextKey(userId);
+      const cacheKey = cacheManager.getAppContextKey(appId);
       const cachedData = await cacheManager.get(cacheKey);
       
       if (cachedData) {
-        logger.info('User context served from cache (by Twilio number)', { twilioPhoneNumber, userId });
+        logger.info('App context served from cache (by Twilio number)', { twilioPhoneNumber, appId });
         return res.status(200).json(cachedData);
       }
 
-      // Get the user's most recently created active app for WhatsApp context
-      const App = require('../models/App');
-      const userApp = await App.findOne({ owner: userId, isActive: true })
-        .sort({ createdAt: -1 })
-        .select('_id name industry')
-        .lean();
+      // Use appId for querying context data (app-specific, not user-specific)
+      const userApp = { _id: app._id, name: app.name, industry: app.industry };
       
-      const treatmentPromise = Questionnaire.find({ owner: userId, type: QUESTIONNAIRE_TYPES.TREATMENT_PLAN, isActive: true })
+      const treatmentPromise = Questionnaire.find({ owner: appId, type: QUESTIONNAIRE_TYPES.SERVICE_PLAN, isActive: true })
         .select('question answer attachedWorkflows')
         .populate('attachedWorkflows.workflowId', 'title question questionTypeId isRoot order')
         .sort({ updatedAt: -1 })
         .exec();
 
-      const faqPromise = Questionnaire.find({ owner: userId, type: QUESTIONNAIRE_TYPES.FAQ, isActive: true })
+      const faqPromise = Questionnaire.find({ owner: appId, type: QUESTIONNAIRE_TYPES.FAQ, isActive: true })
         .select('question answer')
         .sort({ updatedAt: -1 })
         .exec();
 
-      const integrationPromise = Integration.findOne({ owner: userId })
+      const integrationPromise = Integration.findOne({ owner: appId })
         .exec();
 
       const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
-      const workflowPromise = ChatbotWorkflow.find({ owner: userId })
+      const workflowPromise = ChatbotWorkflow.find({ owner: appId })
         .select('title question questionTypeId isRoot order workflowGroupId isActive')
         .sort({ order: 1, createdAt: 1 })
         .exec();

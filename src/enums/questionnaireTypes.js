@@ -1,6 +1,6 @@
 const QUESTIONNAIRE_TYPES = {
   FAQ: 1,
-  TREATMENT_PLAN: 2
+  SERVICE_PLAN: 2  // Formerly TREATMENT_PLAN - renamed for broader applicability
 };
 
 module.exports = {
