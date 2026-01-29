@@ -7,6 +7,7 @@ const { Questionnaire, QUESTIONNAIRE_TYPES } = require('../models/Questionnaire'
 const { QuestionType } = require('../models/QuestionType');
 const { LEAD_TYPES_LIST } = require('../enums/leadTypes');
 const { Integration } = require('../models/Integration');
+const { App } = require('../models/App');
 const cacheManager = require('../utils/cache');
 const { authenticateToken, requireAdmin, requireUserOrAdmin } = require('../middleware/auth');
 const { verifySignedThirdPartyForParamUser } = require('../middleware/thirdParty');
@@ -342,6 +343,221 @@ class UserController {
         return next(new AppError('Invalid user ID format', 400));
       }
       next(new AppError('Failed to retrieve user context', 500));
+    }
+  }
+
+  async getThirdPartyAppContext(req, res, next) {
+    try {
+      const { appId } = req.params;
+
+      if (!appId) {
+        return next(new AppError('App ID is required', 400));
+      }
+
+      const cacheKey = cacheManager.getAppContextKey(appId);
+      const cachedData = await cacheManager.get(cacheKey);
+
+      if (cachedData) {
+        logger.info('App context served from cache', { appId });
+        return res.status(200).json(cachedData);
+      }
+
+      const app = await App.findById(appId).populate('owner', 'firstName lastName professionDescription website').exec();
+      if (!app || !app.owner) {
+        return next(new AppError('App not found', 404));
+      }
+      const user = app.owner;
+
+      const treatmentPromise = Questionnaire.find({ owner: appId, type: QUESTIONNAIRE_TYPES.TREATMENT_PLAN, isActive: true })
+        .select('question answer attachedWorkflows')
+        .populate('attachedWorkflows.workflowId', 'title question questionTypeId isRoot order')
+        .sort({ updatedAt: -1 })
+        .exec();
+
+      const faqPromise = Questionnaire.find({ owner: appId, type: QUESTIONNAIRE_TYPES.FAQ, isActive: true })
+        .select('question answer')
+        .sort({ updatedAt: -1 })
+        .exec();
+
+      const integrationPromise = Integration.findOne({ owner: appId }).exec();
+
+      const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
+      const workflowPromise = ChatbotWorkflow.find({ owner: appId })
+        .select('title question questionTypeId isRoot order workflowGroupId isActive')
+        .sort({ order: 1, createdAt: 1 })
+        .exec();
+
+      const [treatmentDocs, faqDocs, integration, workflowDocs] = await Promise.all([treatmentPromise, faqPromise, integrationPromise, workflowPromise]);
+
+      const defaultQuestionType = await QuestionType.findOne({ isActive: true })
+        .sort({ id: 1 })
+        .select('id')
+        .lean();
+      const defaultQuestionTypeId = defaultQuestionType?.id || 1;
+
+      const treatmentPlans = treatmentDocs.map(d => ({
+        question: d.question,
+        answer: d.answer,
+        attachedWorkflows: (d.attachedWorkflows || [])
+          .filter(aw => aw.workflowId)
+          .sort((a, b) => (a.order || 0) - (b.order || 0))
+          .map(aw => ({
+            workflowId: aw.workflowId._id || aw.workflowId,
+            order: aw.order || 0,
+            workflow: aw.workflowId ? {
+              _id: aw.workflowId._id,
+              title: aw.workflowId.title,
+              question: aw.workflowId.question,
+              questionTypeId: aw.workflowId.questionTypeId,
+              isRoot: aw.workflowId.isRoot,
+              order: aw.workflowId.order
+            } : null
+          }))
+      }));
+      const faq = faqDocs.map(d => ({ question: d.question, answer: d.answer }));
+
+      const workflowMap = {};
+      const rootWorkflows = [];
+
+      workflowDocs.forEach(w => {
+        const workflowData = {
+          _id: w._id,
+          title: w.title,
+          question: w.question,
+          questionTypeId: w.questionTypeId,
+          isRoot: w.isRoot,
+          order: w.order,
+          workflowGroupId: w.workflowGroupId,
+          isActive: w.isActive
+        };
+
+        if (w.isRoot || !w.workflowGroupId) {
+          const groupId = w._id.toString();
+          workflowMap[groupId] = { ...workflowData, questions: [] };
+          rootWorkflows.push(workflowMap[groupId]);
+        } else {
+          const groupId = w.workflowGroupId ? w.workflowGroupId.toString() : w._id.toString();
+          if (!workflowMap[groupId]) {
+            const rootWorkflow = workflowDocs.find(rw =>
+              (rw._id.toString() === groupId && rw.isRoot) ||
+              (rw.workflowGroupId && rw.workflowGroupId.toString() === groupId && rw.isRoot)
+            );
+            if (rootWorkflow) {
+              workflowMap[groupId] = {
+                _id: rootWorkflow._id,
+                title: rootWorkflow.title,
+                question: rootWorkflow.question,
+                questionTypeId: rootWorkflow.questionTypeId,
+                isRoot: rootWorkflow.isRoot,
+                order: rootWorkflow.order,
+                workflowGroupId: rootWorkflow.workflowGroupId,
+                isActive: rootWorkflow.isActive,
+                questions: []
+              };
+              rootWorkflows.push(workflowMap[groupId]);
+            } else {
+              workflowMap[groupId] = {
+                _id: groupId,
+                title: 'Unnamed Workflow',
+                question: '',
+                questionTypeId: defaultQuestionTypeId,
+                isRoot: true,
+                order: 0,
+                isActive: true,
+                questions: []
+              };
+            }
+          }
+          workflowMap[groupId].questions.push(workflowData);
+        }
+      });
+
+      rootWorkflows.forEach(workflow => {
+        if (workflow.questions) {
+          workflow.questions = workflow.questions
+            .filter(q => q.isActive !== false)
+            .sort((a, b) => (a.order || 0) - (b.order || 0));
+        }
+        if (workflow.isActive === false) {
+          const index = rootWorkflows.indexOf(workflow);
+          if (index > -1) rootWorkflows.splice(index, 1);
+        }
+      });
+
+      treatmentPlans.forEach(plan => {
+        if (plan.attachedWorkflows && Array.isArray(plan.attachedWorkflows)) {
+          plan.attachedWorkflows.forEach(attachedFlow => {
+            if (attachedFlow.workflow && attachedFlow.workflow._id) {
+              const existingIndex = rootWorkflows.findIndex(w =>
+                w._id && w._id.toString() === attachedFlow.workflow._id.toString()
+              );
+              if (existingIndex === -1) {
+                rootWorkflows.push({
+                  ...attachedFlow.workflow,
+                  treatmentPlanOrder: attachedFlow.order || 0,
+                  treatmentPlanId: plan.question,
+                  questions: attachedFlow.workflow.questions || []
+                });
+              } else {
+                rootWorkflows[existingIndex].treatmentPlanOrder = attachedFlow.order || 0;
+                rootWorkflows[existingIndex].treatmentPlanId = plan.question;
+              }
+            }
+          });
+        }
+      });
+
+      rootWorkflows.sort((a, b) => {
+        const aOrder = a.treatmentPlanOrder !== undefined ? a.treatmentPlanOrder : (a.order || 0);
+        const bOrder = b.treatmentPlanOrder !== undefined ? b.treatmentPlanOrder : (b.order || 0);
+        if (aOrder !== bOrder) return aOrder - bOrder;
+        return (a.order || 0) - (b.order || 0);
+      });
+
+      const workflows = rootWorkflows;
+
+      const integrationData = integration ? {
+        assistantName: integration.assistantName,
+        companyName: integration.companyName || '',
+        greeting: integration.greeting,
+        validateEmail: integration.validateEmail,
+        validatePhoneNumber: integration.validatePhoneNumber
+      } : {
+        assistantName: 'Assistant',
+        companyName: '',
+        greeting: process.env.DEFAULT_GREETING || 'Hi this is {assistantName} your virtual ai assistant from {companyName}. How can I help you today?',
+        validateEmail: true,
+        validatePhoneNumber: true
+      };
+
+      const responseData = {
+        status: 'success',
+        data: {
+          user: {
+            id: user._id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            professionDescription: user.professionDescription,
+            website: user.website
+          },
+          leadTypes: LEAD_TYPES_LIST,
+          treatmentPlans,
+          faq,
+          integration: integrationData,
+          workflows,
+          country: process.env.COUNTRY
+        }
+      };
+
+      await cacheManager.set(cacheKey, responseData, 300);
+      logger.info('App context retrieved', { appId });
+
+      res.status(200).json(responseData);
+    } catch (error) {
+      if (error.name === 'CastError') {
+        return next(new AppError('Invalid app ID format', 400));
+      }
+      next(new AppError('Failed to retrieve app context', 500));
     }
   }
 
@@ -830,6 +1046,7 @@ router.get('/', authenticateToken, requireAdmin, userController.getAllUsers);
 router.get('/public/:id', userController.getPublicUser);
 router.get('/public/:id/knowledge', verifySignedThirdPartyForParamUser, userController.getPublicUserKnowledge);
 router.get('/public/:id/context', verifySignedThirdPartyForParamUser, userController.getThirdPartyUserContext);
+router.get('/public/apps/:appId/context', verifySignedThirdPartyForParamUser, userController.getThirdPartyAppContext);
 router.get('/by-twilio/:twilioPhoneNumber', verifySignedThirdPartyForParamUser, userController.getUserByTwilioNumber);
 router.get('/by-twilio/:twilioPhoneNumber/context', verifySignedThirdPartyForParamUser, userController.getUserContextByTwilioNumber);
 router.get('/:id', authenticateToken, requireUserOrAdmin, userController.getUserById);
