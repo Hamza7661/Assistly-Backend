@@ -193,7 +193,7 @@ class SeedDataService {
   }
 
   /**
-   * Copy service plans as treatment plans (Questionnaire with type TREATMENT_PLAN)
+   * Copy service plans (Questionnaire with type SERVICE_PLAN)
    */
   static async copyServicePlans(appId, servicePlans) {
     // First, we need to get the workflow IDs that were just created
@@ -202,7 +202,7 @@ class SeedDataService {
     
     const planDocuments = servicePlans.map(plan => ({
       owner: appId,
-      type: QUESTIONNAIRE_TYPES.TREATMENT_PLAN,
+      type: QUESTIONNAIRE_TYPES.SERVICE_PLAN,
       question: plan.name,
       answer: plan.description || '',
       isActive: true,
