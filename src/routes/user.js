@@ -605,6 +605,13 @@ class UserController {
         return res.status(200).json(cachedData);
       }
 
+      // Get the user's most recently created active app for WhatsApp context
+      const App = require('../models/App');
+      const userApp = await App.findOne({ owner: userId, isActive: true })
+        .sort({ createdAt: -1 })
+        .select('_id name')
+        .lean();
+      
       const treatmentPromise = Questionnaire.find({ owner: userId, type: QUESTIONNAIRE_TYPES.TREATMENT_PLAN, isActive: true })
         .select('question answer attachedWorkflows')
         .populate('attachedWorkflows.workflowId', 'title question questionTypeId isRoot order')
@@ -804,6 +811,7 @@ class UserController {
             professionDescription: user.professionDescription,
             website: user.website
           },
+          app: userApp ? { id: userApp._id, name: userApp.name } : null, // Include app for WhatsApp leads
           leadTypes: getLeadTypesFromIntegration(integration),
           treatmentPlans,
           faq,
