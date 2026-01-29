@@ -18,7 +18,12 @@ function getLeadTypesFromIntegration(integration) {
     const active = integration.leadTypeMessages
       .filter(m => m.isActive !== false)
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-    return active.map(m => ({ id: m.id, value: m.value || '', text: m.text || '' }));
+    return active.map(m => ({
+      id: m.id,
+      value: m.value || '',
+      text: m.text || '',
+      ...(Array.isArray(m.relevantServicePlans) && m.relevantServicePlans.length > 0 && { relevantServicePlans: m.relevantServicePlans })
+    }));
   }
   return LEAD_TYPES_LIST;
 }
