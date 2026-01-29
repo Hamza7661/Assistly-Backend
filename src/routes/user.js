@@ -12,6 +12,17 @@ const cacheManager = require('../utils/cache');
 const { authenticateToken, requireAdmin, requireUserOrAdmin } = require('../middleware/auth');
 const { verifySignedThirdPartyForParamUser } = require('../middleware/thirdParty');
 
+// Use application-based lead type messages from Integration when present; otherwise fallback to default list
+function getLeadTypesFromIntegration(integration) {
+  if (integration?.leadTypeMessages && Array.isArray(integration.leadTypeMessages) && integration.leadTypeMessages.length > 0) {
+    const active = integration.leadTypeMessages
+      .filter(m => m.isActive !== false)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    return active.map(m => ({ id: m.id, value: m.value || '', text: m.text || '' }));
+  }
+  return LEAD_TYPES_LIST;
+}
+
 class UserController {
   async getPublicUser(req, res, next) {
     try {
@@ -325,7 +336,7 @@ class UserController {
             professionDescription: user.professionDescription,
             website: user.website
           },
-          leadTypes: LEAD_TYPES_LIST,
+          leadTypes: getLeadTypesFromIntegration(integration),
           treatmentPlans,
           faq,
           integration: integrationData,
@@ -540,7 +551,7 @@ class UserController {
             professionDescription: user.professionDescription,
             website: user.website
           },
-          leadTypes: LEAD_TYPES_LIST,
+          leadTypes: getLeadTypesFromIntegration(integration),
           treatmentPlans,
           faq,
           integration: integrationData,
@@ -788,7 +799,7 @@ class UserController {
             professionDescription: user.professionDescription,
             website: user.website
           },
-          leadTypes: LEAD_TYPES_LIST,
+          leadTypes: getLeadTypesFromIntegration(integration),
           treatmentPlans,
           faq,
           integration: integrationData,
