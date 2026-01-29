@@ -378,7 +378,7 @@ class UserController {
         return res.status(200).json(cachedData);
       }
 
-      const app = await App.findById(appId).populate('owner', 'firstName lastName professionDescription website').exec();
+      const app = await App.findById(appId).select('name industry owner').populate('owner', 'firstName lastName professionDescription website').exec();
       if (!app || !app.owner) {
         return next(new AppError('App not found', 404));
       }
@@ -556,6 +556,11 @@ class UserController {
             professionDescription: user.professionDescription,
             website: user.website
           },
+          app: {
+            id: app._id,
+            name: app.name,
+            industry: app.industry
+          },
           leadTypes: getLeadTypesFromIntegration(integration),
           treatmentPlans,
           faq,
@@ -609,7 +614,7 @@ class UserController {
       const App = require('../models/App');
       const userApp = await App.findOne({ owner: userId, isActive: true })
         .sort({ createdAt: -1 })
-        .select('_id name')
+        .select('_id name industry')
         .lean();
       
       const treatmentPromise = Questionnaire.find({ owner: userId, type: QUESTIONNAIRE_TYPES.TREATMENT_PLAN, isActive: true })
@@ -811,7 +816,7 @@ class UserController {
             professionDescription: user.professionDescription,
             website: user.website
           },
-          app: userApp ? { id: userApp._id, name: userApp.name } : null, // Include app for WhatsApp leads
+          app: userApp ? { id: userApp._id, name: userApp.name, industry: userApp.industry } : null, // Include app for WhatsApp/Voice leads
           leadTypes: getLeadTypesFromIntegration(integration),
           treatmentPlans,
           faq,
