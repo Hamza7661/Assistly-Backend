@@ -91,7 +91,13 @@ const integrationSchema = new mongoose.Schema({
     order: {
       type: Number,
       default: 0
-    }
+    },
+    // Optional: service plan names (treatment plan "question") to show for this lead type
+    // If empty or missing, all service plans are shown
+    relevantServicePlans: [{
+      type: String,
+      trim: true
+    }]
   }]
 }, {
   timestamps: true
@@ -134,7 +140,8 @@ const integrationValidationSchema = Joi.object({
       value: Joi.string().required(),
       text: Joi.string().max(200).required(),
       isActive: Joi.boolean().optional().default(true),
-      order: Joi.number().integer().optional().default(0)
+      order: Joi.number().integer().optional().default(0),
+      relevantServicePlans: Joi.array().items(Joi.string().trim()).optional()
     })
   ).optional()
 });
@@ -158,7 +165,8 @@ const integrationUpdateValidationSchema = Joi.object({
       value: Joi.string().required(),
       text: Joi.string().max(200).required(),
       isActive: Joi.boolean().optional().default(true),
-      order: Joi.number().integer().optional().default(0)
+      order: Joi.number().integer().optional().default(0),
+      relevantServicePlans: Joi.array().items(Joi.string().trim()).optional()
     })
   ).optional()
 }).min(1);
