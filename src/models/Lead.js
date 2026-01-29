@@ -34,6 +34,7 @@ leadSchema.pre('save', function(next) {
 const Lead = mongoose.model('Lead', leadSchema);
 
 const leadCreateSchema = Joi.object({
+  appId: Joi.string().allow(null, '').optional(), // For app-scoped leads (from widget)
   title: Joi.string().max(200).allow(null, '').optional(),
   summary: Joi.string().max(500).allow(null, '').optional(),
   description: Joi.string().max(5000).allow(null, '').optional(),

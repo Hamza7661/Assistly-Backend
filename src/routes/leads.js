@@ -255,7 +255,10 @@ router.post('/public/:userId', verifySignedThirdPartyForParamUser, async (req, r
       const messages = error.details.map(d => d.message);
       throw new AppError(`Validation failed: ${messages.join(', ')}`, 400);
     }
-    const lead = new Lead({ userId, ...value });
+    // Accept appId from body for app-scoped leads (from widget)
+    // Falls back to userId-only for legacy/WhatsApp flows
+    const leadData = value.appId ? { userId, ...value } : { userId, ...value };
+    const lead = new Lead(leadData);
     await lead.save();
     
     // Broadcast new lead to user via WebSocket
