@@ -383,6 +383,7 @@ class UserController {
         return next(new AppError('App not found', 404));
       }
       const user = app.owner;
+      const userId = user._id;
 
       const treatmentPromise = Questionnaire.find({ owner: appId, type: QUESTIONNAIRE_TYPES.SERVICE_PLAN, isActive: true })
         .select('question answer attachedWorkflows')
@@ -395,7 +396,15 @@ class UserController {
         .sort({ updatedAt: -1 })
         .exec();
 
-      const integrationPromise = Integration.findOne({ owner: appId }).exec();
+      // TEMPORARY: Look for Integration by appId first, then fall back to userId during migration
+      // Once all apps have their own Integration, remove the fallback
+      const integrationPromise = Integration.findOne({ owner: appId })
+        .exec()
+        .then(integration => {
+          if (integration) return integration;
+          // Fallback to user-scoped integration (temporary during migration)
+          return Integration.findOne({ owner: userId }).exec();
+        });
 
       const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
       const workflowPromise = ChatbotWorkflow.find({ owner: appId })
@@ -628,8 +637,15 @@ class UserController {
         .sort({ updatedAt: -1 })
         .exec();
 
+      // TEMPORARY: Look for Integration by appId first, then fall back to userId during migration
+      // Once all apps have their own Integration, remove the fallback
       const integrationPromise = Integration.findOne({ owner: appId })
-        .exec();
+        .exec()
+        .then(integration => {
+          if (integration) return integration;
+          // Fallback to user-scoped integration (temporary during migration)
+          return Integration.findOne({ owner: userId }).exec();
+        });
 
       const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
       const workflowPromise = ChatbotWorkflow.find({ owner: appId })

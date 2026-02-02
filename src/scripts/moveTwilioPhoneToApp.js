@@ -2,24 +2,23 @@
  * Script to move Twilio phone number from User model to App model
  * This ensures WhatsApp messages are routed to the correct app with proper context
  * 
- * Usage: node src/scripts/moveTwilioPhoneToApp.js <userEmail> <appName>
- * Example: node src/scripts/moveTwilioPhoneToApp.js libra_dn@hotmail.com Biryaniwaala
+ * Usage: node src/scripts/moveTwilioPhoneToApp.js <userEmail> [appName]
+ * Examples: 
+ *   - Auto-detect app: node src/scripts/moveTwilioPhoneToApp.js libra_dn@hotmail.com
+ *   - Specify app: node src/scripts/moveTwilioPhoneToApp.js libra_dn@hotmail.com Biryaniwaala
  */
 
 const mongoose = require('mongoose');
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
 
-const User = require('../models/User');
+const { User } = require('../models/User');
 const { App } = require('../models/App');
 
 async function moveTwilioPhoneToApp(userEmail, appName) {
   try {
-    await mongoose.connect(process.env.MONGODB_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true
-    });
+    await mongoose.connect(process.env.MONGODB_URI);
 
-    console.log(`\n🔄 Moving Twilio phone number for ${userEmail} to app: ${appName}\n`);
+    console.log(`\n🔄 Moving Twilio phone number for ${userEmail}${appName ? ` to app: ${appName}` : ''}\n`);
 
     // 1. Find the user
     const user = await User.findOne({ email: userEmail });
@@ -38,9 +37,32 @@ async function moveTwilioPhoneToApp(userEmail, appName) {
     console.log(`📞 Twilio phone number: ${twilioPhone}`);
 
     // 2. Find the app
-    const app = await App.findOne({ owner: user._id, name: appName, isActive: true });
-    if (!app) {
-      throw new Error(`❌ App not found: ${appName} for user ${userEmail}`);
+    let app;
+    if (appName) {
+      // If app name is provided, find by name
+      app = await App.findOne({ owner: user._id, name: appName, isActive: true });
+      if (!app) {
+        throw new Error(`❌ App not found: ${appName} for user ${userEmail}`);
+      }
+    } else {
+      // If no app name provided, find user's active apps
+      const userApps = await App.find({ owner: user._id, isActive: true });
+      
+      if (userApps.length === 0) {
+        throw new Error(`❌ No active apps found for user ${userEmail}`);
+      }
+      
+      if (userApps.length > 1) {
+        console.log(`\n❌ User has multiple apps. Please specify which one:`);
+        userApps.forEach((a, i) => {
+          console.log(`   ${i + 1}. ${a.name} (${a.industry || 'No industry'})`);
+        });
+        console.log(`\nUsage: node src/scripts/moveTwilioPhoneToApp.js ${userEmail} "<appName>"`);
+        process.exit(1);
+      }
+      
+      app = userApps[0];
+      console.log(`✅ Auto-detected app: ${app.name}`);
     }
 
     console.log(`✅ Found app: ${app.name}`);
@@ -93,9 +115,11 @@ async function moveTwilioPhoneToApp(userEmail, appName) {
 // Main execution
 const [userEmail, appName] = process.argv.slice(2);
 
-if (!userEmail || !appName) {
-  console.error('\n❌ Usage: node src/scripts/moveTwilioPhoneToApp.js <userEmail> <appName>');
-  console.error('   Example: node src/scripts/moveTwilioPhoneToApp.js libra_dn@hotmail.com Biryaniwaala\n');
+if (!userEmail) {
+  console.error('\n❌ Usage: node src/scripts/moveTwilioPhoneToApp.js <userEmail> [appName]');
+  console.error('   Examples:');
+  console.error('     Auto-detect app: node src/scripts/moveTwilioPhoneToApp.js libra_dn@hotmail.com');
+  console.error('     Specify app: node src/scripts/moveTwilioPhoneToApp.js libra_dn@hotmail.com Biryaniwaala\n');
   process.exit(1);
 }
 
