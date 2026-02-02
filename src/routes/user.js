@@ -396,12 +396,13 @@ class UserController {
         .sort({ updatedAt: -1 })
         .exec();
 
-      // FIXED: Look for Integration by appId first, then fall back to userId for backward compatibility
+      // TEMPORARY: Look for Integration by appId first, then fall back to userId during migration
+      // Once all apps have their own Integration, remove the fallback
       const integrationPromise = Integration.findOne({ owner: appId })
         .exec()
         .then(integration => {
           if (integration) return integration;
-          // Fallback to user-scoped integration for backward compatibility
+          // Fallback to user-scoped integration (temporary during migration)
           return Integration.findOne({ owner: userId }).exec();
         });
 
@@ -636,13 +637,13 @@ class UserController {
         .sort({ updatedAt: -1 })
         .exec();
 
-      // FIXED: Look for Integration by userId (user.owner) since Integration may still be user-scoped
-      // Try app-scoped first, then fall back to user-scoped
+      // TEMPORARY: Look for Integration by appId first, then fall back to userId during migration
+      // Once all apps have their own Integration, remove the fallback
       const integrationPromise = Integration.findOne({ owner: appId })
         .exec()
         .then(integration => {
           if (integration) return integration;
-          // Fallback to user-scoped integration for backward compatibility
+          // Fallback to user-scoped integration (temporary during migration)
           return Integration.findOne({ owner: userId }).exec();
         });
 
