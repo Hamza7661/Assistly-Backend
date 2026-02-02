@@ -5,6 +5,7 @@ const { User } = require('../models/User');
 const { logger } = require('../utils/logger');
 const { AppError } = require('../utils/errorHandler');
 const { authenticateToken } = require('../middleware/auth');
+const { verifySignedThirdPartyForParamUser } = require('../middleware/thirdParty');
 const SeedDataService = require('../services/seedDataService');
 
 class AppController {
@@ -323,6 +324,272 @@ class AppController {
       next(error);
     }
   }
+
+  async getAppContextByTwilioNumber(req, res, next) {
+    try {
+      const { twilioPhoneNumber } = req.params;
+      
+      if (!twilioPhoneNumber) {
+        return next(new AppError('Twilio phone number is required', 400));
+      }
+
+      const cacheManager = require('../utils/cache');
+      const { Integration } = require('../models/Integration');
+      const { Questionnaire, QUESTIONNAIRE_TYPES } = require('../models/Questionnaire');
+      const { QuestionType } = require('../models/QuestionType');
+      const { getLeadTypesFromIntegration } = require('../utils/integrationHelpers');
+
+      // Find the app by Twilio phone number
+      const app = await App.findByTwilioPhone(twilioPhoneNumber)
+        .populate('owner', 'firstName lastName professionDescription website')
+        .select('_id name industry owner')
+        .exec();
+
+      if (!app || !app.owner) {
+        logger.warn('No app found with Twilio phone number', { 
+          twilioPhoneNumber,
+          suggestion: 'Run migration: node src/scripts/autoMigrateTwilioToApp.js'
+        });
+        return next(new AppError('No app found with this Twilio phone number', 404));
+      }
+
+      const user = app.owner;
+      const appId = app._id;
+
+      // Check cache first
+      const cacheKey = cacheManager.getAppContextKey(appId);
+      const cachedData = await cacheManager.get(cacheKey);
+      
+      if (cachedData) {
+        logger.info('App context served from cache (by Twilio number)', { twilioPhoneNumber, appId });
+        return res.status(200).json(cachedData);
+      }
+
+      // Fetch app-specific data (app-wise flow, no user fallback)
+      const userApp = { _id: app._id, name: app.name, industry: app.industry };
+      
+      const treatmentPromise = Questionnaire.find({ owner: appId, type: QUESTIONNAIRE_TYPES.SERVICE_PLAN, isActive: true })
+        .select('question answer attachedWorkflows')
+        .populate('attachedWorkflows.workflowId', 'title question questionTypeId isRoot order')
+        .sort({ updatedAt: -1 })
+        .exec();
+
+      const faqPromise = Questionnaire.find({ owner: appId, type: QUESTIONNAIRE_TYPES.FAQ, isActive: true })
+        .select('question answer')
+        .sort({ updatedAt: -1 })
+        .exec();
+
+      // App-wise: Only look for Integration by appId (no user fallback)
+      const integrationPromise = Integration.findOne({ owner: appId }).exec();
+
+      const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
+      const workflowPromise = ChatbotWorkflow.find({ owner: appId })
+        .select('title question questionTypeId isRoot order workflowGroupId isActive')
+        .sort({ order: 1, createdAt: 1 })
+        .exec();
+
+      const [treatmentDocs, faqDocs, integration, workflowDocs] = await Promise.all([
+        treatmentPromise, 
+        faqPromise, 
+        integrationPromise, 
+        workflowPromise
+      ]);
+
+      // Get default question type
+      const defaultQuestionType = await QuestionType.findOne({ isActive: true })
+        .sort({ id: 1 })
+        .select('id')
+        .lean();
+      const defaultQuestionTypeId = defaultQuestionType?.id || 1;
+
+      // Process treatment plans
+      const treatmentPlans = treatmentDocs.map(d => ({
+        question: d.question,
+        answer: d.answer,
+        attachedWorkflows: (d.attachedWorkflows || [])
+          .filter(aw => aw.workflowId)
+          .sort((a, b) => (a.order || 0) - (b.order || 0))
+          .map(aw => ({
+            workflowId: aw.workflowId._id || aw.workflowId,
+            order: aw.order || 0,
+            workflow: aw.workflowId ? {
+              _id: aw.workflowId._id,
+              title: aw.workflowId.title,
+              question: aw.workflowId.question,
+              questionTypeId: aw.workflowId.questionTypeId,
+              isRoot: aw.workflowId.isRoot,
+              order: aw.workflowId.order
+            } : null
+          }))
+      }));
+
+      const faq = faqDocs.map(d => ({ question: d.question, answer: d.answer }));
+
+      // Process workflows (same logic as in user.js)
+      const workflowMap = {};
+      const rootWorkflows = [];
+      
+      workflowDocs.forEach(w => {
+        const workflowData = {
+          _id: w._id,
+          title: w.title,
+          question: w.question,
+          questionTypeId: w.questionTypeId,
+          isRoot: w.isRoot,
+          order: w.order,
+          workflowGroupId: w.workflowGroupId,
+          isActive: w.isActive
+        };
+        
+        if (w.isRoot || !w.workflowGroupId) {
+          const groupId = w._id.toString();
+          workflowMap[groupId] = {
+            ...workflowData,
+            questions: []
+          };
+          rootWorkflows.push(workflowMap[groupId]);
+        } else {
+          const groupId = w.workflowGroupId ? w.workflowGroupId.toString() : w._id.toString();
+          if (!workflowMap[groupId]) {
+            const rootWorkflow = workflowDocs.find(rw => 
+              (rw._id.toString() === groupId && rw.isRoot) || 
+              (rw.workflowGroupId && rw.workflowGroupId.toString() === groupId && rw.isRoot)
+            );
+            if (rootWorkflow) {
+              workflowMap[groupId] = {
+                _id: rootWorkflow._id,
+                title: rootWorkflow.title,
+                question: rootWorkflow.question,
+                questionTypeId: rootWorkflow.questionTypeId,
+                isRoot: rootWorkflow.isRoot,
+                order: rootWorkflow.order,
+                workflowGroupId: rootWorkflow.workflowGroupId,
+                isActive: rootWorkflow.isActive,
+                questions: []
+              };
+              rootWorkflows.push(workflowMap[groupId]);
+            } else {
+              workflowMap[groupId] = {
+                _id: groupId,
+                title: 'Unnamed Workflow',
+                question: '',
+                questionTypeId: defaultQuestionTypeId,
+                isRoot: true,
+                order: 0,
+                isActive: true,
+                questions: []
+              };
+            }
+          }
+          workflowMap[groupId].questions.push(workflowData);
+        }
+      });
+      
+      rootWorkflows.forEach(workflow => {
+        if (workflow.questions) {
+          workflow.questions = workflow.questions
+            .filter(q => q.isActive !== false)
+            .sort((a, b) => (a.order || 0) - (b.order || 0));
+        }
+        if (workflow.isActive === false) {
+          const index = rootWorkflows.indexOf(workflow);
+          if (index > -1) {
+            rootWorkflows.splice(index, 1);
+          }
+        }
+      });
+      
+      treatmentPlans.forEach(plan => {
+        if (plan.attachedWorkflows && Array.isArray(plan.attachedWorkflows)) {
+          plan.attachedWorkflows.forEach(attachedFlow => {
+            if (attachedFlow.workflow && attachedFlow.workflow._id) {
+              const existingIndex = rootWorkflows.findIndex(w => 
+                w._id && w._id.toString() === attachedFlow.workflow._id.toString()
+              );
+              
+              if (existingIndex === -1) {
+                const workflowToAdd = {
+                  ...attachedFlow.workflow,
+                  treatmentPlanOrder: attachedFlow.order || 0,
+                  treatmentPlanId: plan.question,
+                  questions: attachedFlow.workflow.questions || []
+                };
+                rootWorkflows.push(workflowToAdd);
+              } else {
+                rootWorkflows[existingIndex].treatmentPlanOrder = attachedFlow.order || 0;
+                rootWorkflows[existingIndex].treatmentPlanId = plan.question;
+              }
+            }
+          });
+        }
+      });
+      
+      rootWorkflows.sort((a, b) => {
+        const aOrder = a.treatmentPlanOrder !== undefined ? a.treatmentPlanOrder : (a.order || 0);
+        const bOrder = b.treatmentPlanOrder !== undefined ? b.treatmentPlanOrder : (b.order || 0);
+        if (aOrder !== bOrder) {
+          return aOrder - bOrder;
+        }
+        return (a.order || 0) - (b.order || 0);
+      });
+      
+      const workflows = rootWorkflows;
+
+      // Prepare integration data
+      const integrationData = integration ? {
+        assistantName: integration.assistantName,
+        companyName: integration.companyName || '',
+        greeting: integration.greeting,
+        validateEmail: integration.validateEmail,
+        validatePhoneNumber: integration.validatePhoneNumber
+      } : {
+        assistantName: 'Assistant',
+        companyName: '',
+        greeting: process.env.DEFAULT_GREETING || 'Hi this is {assistantName} your virtual ai assistant from {companyName}. How can I help you today?',
+        validateEmail: true,
+        validatePhoneNumber: true
+      };
+
+      const responseData = {
+        status: 'success',
+        data: {
+          user: {
+            id: user._id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            professionDescription: user.professionDescription,
+            website: user.website
+          },
+          app: userApp ? { id: userApp._id, name: userApp.name, industry: userApp.industry } : null,
+          leadTypes: getLeadTypesFromIntegration(integration),
+          treatmentPlans,
+          faq,
+          integration: integrationData,
+          workflows,
+          country: process.env.COUNTRY
+        }
+      };
+
+      // Cache the response for 5 minutes
+      await cacheManager.set(cacheKey, responseData, 300);
+
+      logger.info('App context retrieved by Twilio phone number (app-wise)', { 
+        twilioPhoneNumber, 
+        appId, 
+        appName: app.name,
+        industry: app.industry 
+      });
+
+      res.status(200).json(responseData);
+    } catch (error) {
+      logger.error('Error retrieving app context by Twilio number', {
+        twilioPhoneNumber: req.params.twilioPhoneNumber,
+        error: error.message,
+        stack: error.stack
+      });
+      next(new AppError('Failed to retrieve app context by Twilio phone number', 500));
+    }
+  }
 }
 
 const appController = new AppController();
@@ -330,6 +597,7 @@ const appController = new AppController();
 // Routes
 router.post('/', authenticateToken, appController.createApp);
 router.get('/', authenticateToken, appController.getApps);
+router.get('/by-twilio/:twilioPhoneNumber/context', verifySignedThirdPartyForParamUser, appController.getAppContextByTwilioNumber);
 router.get('/:id', authenticateToken, appController.getApp);
 router.put('/:id', authenticateToken, appController.updateApp);
 router.delete('/:id', authenticateToken, appController.deleteApp);
