@@ -7,6 +7,28 @@ const { AppError } = require('../utils/errorHandler');
 const { authenticateToken } = require('../middleware/auth');
 const { verifySignedThirdPartyForParamUser } = require('../middleware/thirdParty');
 const SeedDataService = require('../services/seedDataService');
+const { LEAD_TYPES_LIST } = require('../enums/leadTypes');
+const cacheManager = require('../utils/cache');
+const { Integration } = require('../models/Integration');
+const { Questionnaire, QUESTIONNAIRE_TYPES } = require('../models/Questionnaire');
+const { QuestionType } = require('../models/QuestionType');
+const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
+
+// Use application-based lead type messages from Integration when present; otherwise fallback to default list
+function getLeadTypesFromIntegration(integration) {
+  if (integration?.leadTypeMessages && Array.isArray(integration.leadTypeMessages) && integration.leadTypeMessages.length > 0) {
+    const active = integration.leadTypeMessages
+      .filter(m => m.isActive !== false)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    return active.map(m => ({
+      id: m.id,
+      value: m.value || '',
+      text: m.text || '',
+      ...(Array.isArray(m.relevantServicePlans) && m.relevantServicePlans.length > 0 && { relevantServicePlans: m.relevantServicePlans })
+    }));
+  }
+  return LEAD_TYPES_LIST;
+}
 
 class AppController {
   // Helper to verify app ownership
@@ -333,12 +355,6 @@ class AppController {
         return next(new AppError('Twilio phone number is required', 400));
       }
 
-      const cacheManager = require('../utils/cache');
-      const { Integration } = require('../models/Integration');
-      const { Questionnaire, QUESTIONNAIRE_TYPES } = require('../models/Questionnaire');
-      const { QuestionType } = require('../models/QuestionType');
-      const { getLeadTypesFromIntegration } = require('../utils/integrationHelpers');
-
       // Find the app by Twilio phone number
       const app = await App.findByTwilioPhone(twilioPhoneNumber)
         .populate('owner', 'firstName lastName professionDescription website')
@@ -382,7 +398,6 @@ class AppController {
       // App-wise: Only look for Integration by appId (no user fallback)
       const integrationPromise = Integration.findOne({ owner: appId }).exec();
 
-      const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
       const workflowPromise = ChatbotWorkflow.find({ owner: appId })
         .select('title question questionTypeId isRoot order workflowGroupId isActive')
         .sort({ order: 1, createdAt: 1 })
@@ -585,9 +600,11 @@ class AppController {
       logger.error('Error retrieving app context by Twilio number', {
         twilioPhoneNumber: req.params.twilioPhoneNumber,
         error: error.message,
-        stack: error.stack
+        stack: error.stack,
+        name: error.name
       });
-      next(new AppError('Failed to retrieve app context by Twilio phone number', 500));
+      // Pass the original error to get more details
+      next(error);
     }
   }
 }
