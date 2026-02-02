@@ -112,7 +112,14 @@ appSchema.pre('save', function(next) {
 
 // Static methods
 appSchema.statics.findByTwilioPhone = function(twilioPhoneNumber) {
-  return this.findOne({ twilioPhoneNumber, isActive: true });
+  return this.findOne({ 
+    twilioPhoneNumber, 
+    isActive: true,
+    $or: [
+      { deletedAt: null },
+      { deletedAt: { $exists: false } }
+    ]
+  });
 };
 
 const App = mongoose.model('App', appSchema);
