@@ -51,7 +51,8 @@ const appSchema = new mongoose.Schema({
   whatsappNumberStatus: {
     type: String,
     enum: ['pending', 'registered', 'failed'],
-    default: null
+    default: null,
+    set: (v) => (v && typeof v === 'string' ? v.toLowerCase() : v)
   },
   twilioWhatsAppSenderId: {
     type: String,
@@ -107,6 +108,9 @@ appSchema.index({ createdAt: -1 });
 
 appSchema.pre('save', function(next) {
   this.updatedAt = new Date();
+  if (this.whatsappNumberStatus && typeof this.whatsappNumberStatus === 'string') {
+    this.whatsappNumberStatus = this.whatsappNumberStatus.toLowerCase();
+  }
   next();
 });
 

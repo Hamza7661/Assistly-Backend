@@ -3,10 +3,23 @@ const { AppError } = require('../utils/errorHandler');
 const { authenticateToken, requireUserOrAdmin } = require('../middleware/auth');
 const { verifySignedThirdPartyForParamUser } = require('../middleware/thirdParty');
 const { verifyAppOwnership } = require('../middleware/appOwnership');
+const { App } = require('../models/App');
 const { Lead, leadCreateSchema, leadQuerySchema, leadUpdateSchema } = require('../models/Lead');
 const websocketServer = require('../utils/websocketServer');
 
 const router = express.Router();
+
+/** Resolve if current user may access this lead (for routes that don't have req.appId, e.g. GET/PUT/DELETE /:id) */
+async function canAccessLead(lead, userId, userRole, reqAppId) {
+  if (userRole === 'admin') return true;
+  if (reqAppId && lead.appId && String(lead.appId) === reqAppId) return true;
+  if (lead.userId && String(lead.userId) === userId) return true;
+  if (lead.appId) {
+    const app = await App.findById(lead.appId).select('owner').lean();
+    if (app && app.owner && String(app.owner) === userId) return true;
+  }
+  return false;
+}
 
 // Create lead for app - NEW APP-SCOPED ROUTE
 router.post('/apps/:appId', authenticateToken, verifyAppOwnership, async (req, res, next) => {
@@ -89,11 +102,8 @@ router.get('/:id', authenticateToken, requireUserOrAdmin, async (req, res, next)
     if (!id) return next(new AppError('Lead ID is required', 400));
     const lead = await Lead.findById(id);
     if (!lead) return next(new AppError('Lead not found', 404));
-    // Check ownership via appId or userId
-    const isOwner = req.user.role === 'admin' || 
-      (lead.appId && String(lead.appId) === req.appId) ||
-      (lead.userId && String(lead.userId) === req.user.id);
-    if (!isOwner) return next(new AppError('Insufficient permissions', 403));
+    const allowed = await canAccessLead(lead, req.user.id, req.user.role, req.appId);
+    if (!allowed) return next(new AppError('Insufficient permissions', 403));
     res.status(200).json({ status: 'success', data: { lead } });
   } catch (err) { next(err); }
 });
@@ -215,11 +225,8 @@ router.put('/:id', authenticateToken, requireUserOrAdmin, async (req, res, next)
 
     const lead = await Lead.findById(id);
     if (!lead) return next(new AppError('Lead not found', 404));
-    // Check ownership via appId or userId
-    const isOwner = req.user.role === 'admin' || 
-      (lead.appId && String(lead.appId) === req.appId) ||
-      (lead.userId && String(lead.userId) === req.user.id);
-    if (!isOwner) return next(new AppError('Insufficient permissions', 403));
+    const allowed = await canAccessLead(lead, req.user.id, req.user.role, req.appId);
+    if (!allowed) return next(new AppError('Insufficient permissions', 403));
 
     Object.assign(lead, value);
     await lead.save();
@@ -234,11 +241,8 @@ router.delete('/:id', authenticateToken, requireUserOrAdmin, async (req, res, ne
     if (!id) return next(new AppError('Lead ID is required', 400));
     const lead = await Lead.findById(id);
     if (!lead) return next(new AppError('Lead not found', 404));
-    // Check ownership via appId or userId
-    const isOwner = req.user.role === 'admin' || 
-      (lead.appId && String(lead.appId) === req.appId) ||
-      (lead.userId && String(lead.userId) === req.user.id);
-    if (!isOwner) return next(new AppError('Insufficient permissions', 403));
+    const allowed = await canAccessLead(lead, req.user.id, req.user.role, req.appId);
+    if (!allowed) return next(new AppError('Insufficient permissions', 403));
     await Lead.deleteOne({ _id: id });
     res.status(200).json({ status: 'success', message: 'Lead deleted' });
   } catch (err) { next(err); }
