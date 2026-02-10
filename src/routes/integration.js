@@ -7,6 +7,7 @@ const { authenticateToken, requireUserOrAdmin } = require('../middleware/auth');
 const { verifySignedThirdPartyForParamUser } = require('../middleware/thirdParty');
 const { verifyAppOwnership } = require('../middleware/appOwnership');
 const { uploadSingle } = require('../middleware/upload');
+const cacheManager = require('../utils/cache');
 
 class IntegrationController {
   async getIntegration(req, res, next) {
@@ -151,6 +152,15 @@ class IntegrationController {
         }
       );
 
+      // Invalidate app context cache so next widget/WhatsApp context fetch includes new integration (e.g. googleReview)
+      try {
+        const cacheKey = cacheManager.getAppContextKey(appId);
+        await cacheManager.del(cacheKey);
+        logger.info('Invalidated app context cache after integration update', { appId });
+      } catch (cacheErr) {
+        logger.warn('Failed to invalidate app context cache', { appId, error: cacheErr?.message });
+      }
+
       logger.info('Updated integration settings', { appId, updatedFields: Object.keys(value) });
 
       res.status(200).json({
@@ -176,6 +186,8 @@ class IntegrationController {
             primaryColor: integration.primaryColor,
             validateEmail: integration.validateEmail,
             validatePhoneNumber: integration.validatePhoneNumber,
+            googleReviewEnabled: integration.googleReviewEnabled || false,
+            googleReviewUrl: integration.googleReviewUrl || null,
             leadTypeMessages: integration.leadTypeMessages || [],
             createdAt: integration.createdAt,
             updatedAt: integration.updatedAt
