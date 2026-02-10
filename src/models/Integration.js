@@ -68,6 +68,16 @@ const integrationSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
+  googleReviewEnabled: {
+    type: Boolean,
+    default: false
+  },
+  googleReviewUrl: {
+    type: String,
+    trim: true,
+    default: null,
+    maxlength: 500
+  },
   leadTypeMessages: [{
     id: {
       type: Number,
@@ -134,6 +144,8 @@ const integrationValidationSchema = Joi.object({
   }),
   validateEmail: Joi.boolean().optional(),
   validatePhoneNumber: Joi.boolean().optional(),
+  googleReviewEnabled: Joi.boolean().optional(),
+  googleReviewUrl: Joi.string().max(500).allow(null, '').optional(),
   leadTypeMessages: Joi.array().items(
     Joi.object({
       id: Joi.number().integer().required(),
@@ -159,6 +171,8 @@ const integrationUpdateValidationSchema = Joi.object({
   }),
   validateEmail: Joi.boolean().optional(),
   validatePhoneNumber: Joi.boolean().optional(),
+  googleReviewEnabled: Joi.boolean().optional(),
+  googleReviewUrl: Joi.string().max(500).allow(null, '').optional(),
   leadTypeMessages: Joi.array().items(
     Joi.object({
       id: Joi.number().integer().required(),

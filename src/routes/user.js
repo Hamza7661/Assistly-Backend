@@ -334,13 +334,17 @@ class UserController {
         companyName: integration.companyName || '',
         greeting: integration.greeting,
         validateEmail: integration.validateEmail,
-        validatePhoneNumber: integration.validatePhoneNumber
+        validatePhoneNumber: integration.validatePhoneNumber,
+        googleReviewEnabled: !!integration.googleReviewEnabled,
+        googleReviewUrl: integration.googleReviewUrl || null
       } : {
         assistantName: 'Assistant',
         companyName: '',
         greeting: process.env.DEFAULT_GREETING || 'Hi this is {assistantName} your virtual ai assistant from {companyName}. How can I help you today?',
         validateEmail: true,
-        validatePhoneNumber: true
+        validatePhoneNumber: true,
+        googleReviewEnabled: false,
+        googleReviewUrl: null
       };
 
       const responseData = {
@@ -558,13 +562,17 @@ class UserController {
         companyName: integration.companyName || '',
         greeting: integration.greeting,
         validateEmail: integration.validateEmail,
-        validatePhoneNumber: integration.validatePhoneNumber
+        validatePhoneNumber: integration.validatePhoneNumber,
+        googleReviewEnabled: !!integration.googleReviewEnabled,
+        googleReviewUrl: integration.googleReviewUrl || null
       } : {
         assistantName: 'Assistant',
         companyName: '',
         greeting: process.env.DEFAULT_GREETING || 'Hi this is {assistantName} your virtual ai assistant from {companyName}. How can I help you today?',
         validateEmail: true,
-        validatePhoneNumber: true
+        validatePhoneNumber: true,
+        googleReviewEnabled: false,
+        googleReviewUrl: null
       };
 
       const responseData = {
@@ -825,13 +833,17 @@ class UserController {
         companyName: integration.companyName || '',
         greeting: integration.greeting,
         validateEmail: integration.validateEmail,
-        validatePhoneNumber: integration.validatePhoneNumber
+        validatePhoneNumber: integration.validatePhoneNumber,
+        googleReviewEnabled: !!integration.googleReviewEnabled,
+        googleReviewUrl: integration.googleReviewUrl || null
       } : {
         assistantName: 'Assistant',
         companyName: '',
         greeting: process.env.DEFAULT_GREETING || 'Hi this is {assistantName} your virtual ai assistant from {companyName}. How can I help you today?',
         validateEmail: true,
-        validatePhoneNumber: true
+        validatePhoneNumber: true,
+        googleReviewEnabled: false,
+        googleReviewUrl: null
       };
 
       const responseData = {

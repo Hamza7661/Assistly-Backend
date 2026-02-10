@@ -63,6 +63,8 @@ class IntegrationController {
             primaryColor: integration.primaryColor,
             validateEmail: integration.validateEmail,
             validatePhoneNumber: integration.validatePhoneNumber,
+            googleReviewEnabled: integration.googleReviewEnabled || false,
+            googleReviewUrl: integration.googleReviewUrl || null,
             leadTypeMessages: integration.leadTypeMessages || [],
             createdAt: integration.createdAt,
             updatedAt: integration.updatedAt
@@ -88,6 +90,11 @@ class IntegrationController {
 
       if (!appId) {
         return next(new AppError('App ID is required', 400));
+      }
+
+      // Coerce FormData booleans (sent as strings)
+      if (typeof updateData.googleReviewEnabled === 'string') {
+        updateData.googleReviewEnabled = updateData.googleReviewEnabled === 'true';
       }
 
       // Handle leadTypeMessages from FormData (it comes as a JSON string)
