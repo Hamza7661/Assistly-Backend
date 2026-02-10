@@ -101,10 +101,15 @@ class IntegrationController {
         }
       }
 
-      // Strip _id fields from leadTypeMessages before validation (Mongoose adds these but we don't need them)
+      // Strip _id and keep value in sync with text (slug) so backend/AI filtering matches the displayed label
       if (updateData.leadTypeMessages && Array.isArray(updateData.leadTypeMessages)) {
-        updateData.leadTypeMessages = updateData.leadTypeMessages.map(msg => {
+        const slugify = (t) => (t || '').trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') || null;
+        updateData.leadTypeMessages = updateData.leadTypeMessages.map((msg, idx) => {
           const { _id, ...rest } = msg;
+          const text = (rest.text || '').trim();
+          const slug = slugify(rest.text);
+          // Value must match label so "Catering" -> value "catering"; fallback to existing value or custom-{id}
+          rest.value = slug || rest.value || `custom-${rest.id ?? idx + 1}`;
           return rest;
         });
       }
