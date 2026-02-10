@@ -12,18 +12,30 @@ const cacheManager = require('../utils/cache');
 const { authenticateToken, requireAdmin, requireUserOrAdmin } = require('../middleware/auth');
 const { verifySignedThirdPartyForParamUser } = require('../middleware/thirdParty');
 
+// Slug from label so value matches displayed text (e.g. "Catering" -> "catering")
+function slugifyLeadValue(text) {
+  if (!text || typeof text !== 'string') return '';
+  return text.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') || '';
+}
+
 // Use application-based lead type messages from Integration when present; otherwise fallback to default list
+// Normalize value from text on read so all apps/industries get correct routing even if DB had stale value
 function getLeadTypesFromIntegration(integration) {
   if (integration?.leadTypeMessages && Array.isArray(integration.leadTypeMessages) && integration.leadTypeMessages.length > 0) {
     const active = integration.leadTypeMessages
       .filter(m => m.isActive !== false)
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-    return active.map(m => ({
-      id: m.id,
-      value: m.value || '',
-      text: m.text || '',
-      ...(Array.isArray(m.relevantServicePlans) && m.relevantServicePlans.length > 0 && { relevantServicePlans: m.relevantServicePlans })
-    }));
+    return active.map((m, idx) => {
+      const text = m.text || '';
+      const slug = slugifyLeadValue(text);
+      const value = slug || m.value || `custom-${m.id ?? idx + 1}`;
+      return {
+        id: m.id,
+        value,
+        text,
+        ...(Array.isArray(m.relevantServicePlans) && m.relevantServicePlans.length > 0 && { relevantServicePlans: m.relevantServicePlans })
+      };
+    });
   }
   return LEAD_TYPES_LIST;
 }
