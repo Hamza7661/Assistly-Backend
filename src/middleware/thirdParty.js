@@ -40,7 +40,13 @@ const verifySignedThirdPartyForParamUser = (req, res, next) => {
     pruneNonces();
     if (seenNonces.has(nonce)) return next(new AppError('Replay detected', 401));
 
-    const basePath = req.originalUrl.split('?')[0];
+    // Use canonical (decoded) path for signing so client and server agree regardless of URL encoding
+    let basePath = req.originalUrl.split('?')[0];
+    try {
+      basePath = decodeURIComponent(basePath);
+    } catch (_) {
+      // keep raw path if decode fails (e.g. malformed %)
+    }
     const userId = req.params.id || req.params.userId;
     const appId = req.params.appId;
     const twilioPhoneNumber = req.params.twilioPhoneNumber;
