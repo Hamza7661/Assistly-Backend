@@ -29,12 +29,17 @@ function getLeadTypesFromIntegration(integration) {
       const text = m.text || '';
       const slug = slugifyLeadValue(text);
       const value = slug || m.value || `custom-${m.id ?? idx + 1}`;
-      return {
+      const out = {
         id: m.id,
         value,
         text,
-        ...(Array.isArray(m.relevantServicePlans) && m.relevantServicePlans.length > 0 && { relevantServicePlans: m.relevantServicePlans })
+        ...(Array.isArray(m.relevantServicePlans) && m.relevantServicePlans.length > 0 && { relevantServicePlans: m.relevantServicePlans }),
+        ...(Array.isArray(m.synonyms) && m.synonyms.length > 0 && { synonyms: m.synonyms.filter(Boolean).map(s => String(s).trim()).filter(Boolean) })
       };
+      if (m.labels && typeof m.labels === 'object') {
+        out.labels = m.labels instanceof Map ? Object.fromEntries(m.labels) : m.labels;
+      }
+      return out;
     });
   }
   return LEAD_TYPES_LIST;
@@ -1002,7 +1007,7 @@ class UserController {
         return next(new AppError('User ID is required', 400));
       }
 
-      const allowedUpdates = ['firstName', 'lastName', 'phoneNumber', 'email', 'profession', 'professionDescription', 'industry', 'region', 'package', 'website', 'twilioPhoneNumber'];
+      const allowedUpdates = ['firstName', 'lastName', 'phoneNumber', 'email', 'profession', 'professionDescription', 'industry', 'region', 'package', 'website', 'twilioPhoneNumber', 'preferences'];
       const filteredUpdates = {};
 
       // Get current user to check existing industry
@@ -1011,8 +1016,21 @@ class UserController {
         return next(new AppError('User not found', 404));
       }
 
+      // Merge preferences (e.g. preferredLanguages) so we don't wipe other preference keys
+      if (updateData.preferences && typeof updateData.preferences === 'object') {
+        const prefs = currentUser.preferences || {};
+        if (Array.isArray(updateData.preferences.preferredLanguages)) {
+          if (updateData.preferences.preferredLanguages.length > 3) {
+            return next(new AppError('Preferred languages cannot exceed 3', 400));
+          }
+          prefs.preferredLanguages = updateData.preferences.preferredLanguages.filter(Boolean).map((c) => String(c).trim().toLowerCase()).slice(0, 3);
+        }
+        filteredUpdates.preferences = prefs;
+      }
+
       Object.keys(updateData).forEach(key => {
         if (!allowedUpdates.includes(key)) return;
+        if (key === 'preferences') return; // already handled above
         let value = updateData[key];
 
         // Map alias 'profession' -> 'professionDescription'

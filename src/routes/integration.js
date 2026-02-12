@@ -66,6 +66,7 @@ class IntegrationController {
             validatePhoneNumber: integration.validatePhoneNumber,
             googleReviewEnabled: integration.googleReviewEnabled || false,
             googleReviewUrl: integration.googleReviewUrl || null,
+            preferredLanguages: integration.preferredLanguages || [],
             leadTypeMessages: integration.leadTypeMessages || [],
             createdAt: integration.createdAt,
             updatedAt: integration.updatedAt
@@ -104,8 +105,17 @@ class IntegrationController {
           updateData.leadTypeMessages = JSON.parse(updateData.leadTypeMessages);
         } catch (e) {
           logger.error('Failed to parse leadTypeMessages', { error: e });
-          // If parsing fails, remove it from updateData so validation can handle it
           delete updateData.leadTypeMessages;
+        }
+      }
+
+      // Handle preferredLanguages from FormData (may come as JSON string)
+      if (updateData.preferredLanguages && typeof updateData.preferredLanguages === 'string') {
+        try {
+          updateData.preferredLanguages = JSON.parse(updateData.preferredLanguages);
+        } catch (e) {
+          logger.error('Failed to parse preferredLanguages', { error: e });
+          delete updateData.preferredLanguages;
         }
       }
 
@@ -188,6 +198,7 @@ class IntegrationController {
             validatePhoneNumber: integration.validatePhoneNumber,
             googleReviewEnabled: integration.googleReviewEnabled || false,
             googleReviewUrl: integration.googleReviewUrl || null,
+            preferredLanguages: integration.preferredLanguages || [],
             leadTypeMessages: integration.leadTypeMessages || [],
             createdAt: integration.createdAt,
             updatedAt: integration.updatedAt
