@@ -732,6 +732,30 @@ class AppController {
       }
       logger.info(`Invalidated app context cache for ${appsWithThisNumber.length} app(s) with number ${num}`);
 
+      // Tell AI to clear WhatsApp sessions for this number so next message gets fresh context (new app's lead types)
+      const aiBaseUrl = (process.env.ASSISTLY_AI_BASE_URL || '').replace(/\/$/, '');
+      const invalidateSecret = process.env.ASSISTLY_INVALIDATE_SESSIONS_SECRET || '';
+      if (aiBaseUrl && invalidateSecret) {
+        try {
+          const res = await fetch(`${aiBaseUrl}/api/v1/whatsapp/invalidate-sessions`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Invalidate-Sessions-Secret': invalidateSecret
+            },
+            body: JSON.stringify({ twilio_phone: num })
+          });
+          if (res.ok) {
+            const data = await res.json().catch(() => ({}));
+            logger.info('AI WhatsApp sessions invalidated for number', { num, removed: data.removed_sessions });
+          } else {
+            logger.warn('AI invalidate-sessions returned non-OK', { status: res.status, num });
+          }
+        } catch (err) {
+          logger.warn('Failed to invalidate AI WhatsApp sessions for number', { num, error: err?.message });
+        }
+      }
+
       logger.info(`App ${app.name} (${app._id}) set as using Twilio number by user ${userId}`);
 
       res.status(200).json({
