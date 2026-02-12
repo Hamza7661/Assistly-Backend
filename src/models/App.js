@@ -72,7 +72,13 @@ const appSchema = new mongoose.Schema({
       message: 'Twilio phone number must be in E.164 format (e.g., +1234567890)'
     },
     index: true,
-    sparse: true // Allow multiple null values, but unique when not null
+    sparse: true
+  },
+  /** When true, this app is the one that receives Twilio webhooks/leads for its number. Only one app per number should have this true. */
+  usesTwilioNumber: {
+    type: Boolean,
+    default: false,
+    index: true
   },
   isActive: {
     type: Boolean,
@@ -101,8 +107,9 @@ const appSchema = new mongoose.Schema({
 appSchema.index({ owner: 1 });
 // Unique index only for active apps - allows reusing names from deleted apps
 appSchema.index({ owner: 1, name: 1 }, { unique: true, partialFilterExpression: { isActive: true } });
-appSchema.index({ whatsappNumber: 1 }, { unique: true, sparse: true });
-appSchema.index({ twilioPhoneNumber: 1 }, { unique: true, sparse: true });
+appSchema.index({ whatsappNumber: 1 }, { sparse: true });
+appSchema.index({ twilioPhoneNumber: 1 }, { sparse: true });
+appSchema.index({ twilioPhoneNumber: 1, usesTwilioNumber: 1 }, { partialFilterExpression: { usesTwilioNumber: true }, sparse: true });
 appSchema.index({ isActive: 1 });
 appSchema.index({ createdAt: -1 });
 
@@ -111,19 +118,29 @@ appSchema.pre('save', function(next) {
   if (this.whatsappNumberStatus && typeof this.whatsappNumberStatus === 'string') {
     this.whatsappNumberStatus = this.whatsappNumberStatus.toLowerCase();
   }
+  // Webhook/AI context lookup uses twilioPhoneNumber or whatsappNumber; keep in sync so the app is found when messages arrive on this number
+  if (this.whatsappNumber && typeof this.whatsappNumber === 'string') {
+    const num = this.whatsappNumber.trim();
+    if (num && !this.twilioPhoneNumber) {
+      this.twilioPhoneNumber = num;
+    }
+  }
   next();
 });
 
 // Static methods
+// Resolve app by Twilio/WhatsApp number: among apps that have this number, return the one with usesTwilioNumber true (leads/flows use that app). Falls back to any app with this number if none flagged.
 appSchema.statics.findByTwilioPhone = function(twilioPhoneNumber) {
-  return this.findOne({ 
-    twilioPhoneNumber, 
-    isActive: true,
-    $or: [
-      { deletedAt: null },
-      { deletedAt: { $exists: false } }
+  const normalized = twilioPhoneNumber && String(twilioPhoneNumber).trim();
+  if (!normalized) return this.findOne({ _id: null });
+  const baseQuery = {
+    $and: [
+      { $or: [ { twilioPhoneNumber: normalized }, { whatsappNumber: normalized } ] },
+      { isActive: true },
+      { $or: [ { deletedAt: null }, { deletedAt: { $exists: false } } ] }
     ]
-  });
+  };
+  return this.findOne(baseQuery).sort({ usesTwilioNumber: -1 }); // prefer usesTwilioNumber true
 };
 
 const App = mongoose.model('App', appSchema);
@@ -232,6 +249,9 @@ const appUpdateValidationSchema = Joi.object({
     .messages({
       'string.pattern.base': 'Twilio phone number must be in E.164 format (e.g., +1234567890)'
     }),
+  
+  usesTwilioNumber: Joi.boolean()
+    .optional(),
   
   isActive: Joi.boolean()
     .optional()

@@ -106,7 +106,9 @@ class AppController {
 
       // Handle WhatsApp number configuration
       if (whatsappOption === 'use-my-number' && whatsappNumber) {
-        appData.whatsappNumber = whatsappNumber.trim();
+        const num = whatsappNumber.trim();
+        appData.whatsappNumber = num;
+        appData.twilioPhoneNumber = num; // same number is used for webhook lookup (required for leads/flows/AI context)
         appData.whatsappNumberSource = 'user-provided';
         appData.whatsappNumberStatus = 'pending';
         // TODO: Register with Twilio Senders API (will be implemented in whatsappService)
@@ -118,6 +120,24 @@ class AppController {
 
       const app = new App(appData);
       await app.save();
+
+      // If this app has a number and is the only one with this number for this owner, it should use the Twilio number
+      const num = app.whatsappNumber?.trim?.();
+      if (num) {
+        const othersWithSameNumber = await App.countDocuments({
+          owner: userId,
+          _id: { $ne: app._id },
+          isActive: true,
+          $and: [
+            { $or: [ { deletedAt: null }, { deletedAt: { $exists: false } } ] },
+            { $or: [ { whatsappNumber: num }, { twilioPhoneNumber: num } ] }
+          ]
+        });
+        if (othersWithSameNumber === 0) {
+          app.usesTwilioNumber = true;
+          await app.save();
+        }
+      }
 
       logger.info(`New app created: ${app.name} (${app._id}) by user ${userId}`);
 
@@ -142,6 +162,7 @@ class AppController {
             whatsappNumber: app.whatsappNumber,
             whatsappNumberSource: app.whatsappNumberSource,
             whatsappNumberStatus: app.whatsappNumberStatus,
+            usesTwilioNumber: !!app.usesTwilioNumber,
             isActive: app.isActive,
             createdAt: app.createdAt,
             updatedAt: app.updatedAt
@@ -191,6 +212,7 @@ class AppController {
             whatsappNumber: app.whatsappNumber,
             whatsappNumberSource: app.whatsappNumberSource,
             whatsappNumberStatus: app.whatsappNumberStatus,
+            usesTwilioNumber: !!app.usesTwilioNumber,
             isActive: app.isActive,
             createdAt: app.createdAt,
             updatedAt: app.updatedAt
@@ -222,6 +244,7 @@ class AppController {
             whatsappNumberSource: app.whatsappNumberSource,
             whatsappNumberStatus: app.whatsappNumberStatus,
             twilioWhatsAppSenderId: app.twilioWhatsAppSenderId,
+            usesTwilioNumber: !!app.usesTwilioNumber,
             isActive: app.isActive,
             createdAt: app.createdAt,
             updatedAt: app.updatedAt
@@ -274,6 +297,14 @@ class AppController {
         app[key] = value[key];
       });
 
+      // So webhook/AI context lookup finds this app: keep twilioPhoneNumber in sync with whatsappNumber when the app has a number
+      if (app.whatsappNumber && typeof app.whatsappNumber === 'string') {
+        const num = app.whatsappNumber.trim();
+        if (num && !app.twilioPhoneNumber) {
+          app.twilioPhoneNumber = num;
+        }
+      }
+
       await app.save();
 
       logger.info(`App updated: ${app.name} (${app._id}) by user ${userId}`);
@@ -291,6 +322,7 @@ class AppController {
             whatsappNumberSource: app.whatsappNumberSource,
             whatsappNumberStatus: app.whatsappNumberStatus,
             twilioWhatsAppSenderId: app.twilioWhatsAppSenderId,
+            usesTwilioNumber: !!app.usesTwilioNumber,
             isActive: app.isActive,
             createdAt: app.createdAt,
             updatedAt: app.updatedAt
@@ -314,9 +346,37 @@ class AppController {
       const app = await AppController.verifyAppOwnership(id, userId);
 
       // Soft delete by setting isActive to false and deletedAt timestamp
+      const num = (app.twilioPhoneNumber || app.whatsappNumber)?.trim?.();
       app.isActive = false;
       app.deletedAt = new Date();
       await app.save();
+
+      // If the deleted app had a number and used it, assign usesTwilioNumber to one remaining app with the same number (deterministic: oldest by createdAt)
+      if (num && app.usesTwilioNumber) {
+        const otherWithSameNumber = await App.findOne({
+          owner: userId,
+          _id: { $ne: id },
+          isActive: true,
+          $and: [
+            { $or: [ { deletedAt: null }, { deletedAt: { $exists: false } } ] },
+            { $or: [ { whatsappNumber: num }, { twilioPhoneNumber: num } ] }
+          ]
+        })
+          .sort({ createdAt: 1 }); // among multiple apps with this number, pick the oldest (first created)
+        if (otherWithSameNumber) {
+          otherWithSameNumber.usesTwilioNumber = true;
+          await otherWithSameNumber.save();
+          await App.updateMany(
+            {
+              owner: userId,
+              _id: { $nin: [id, otherWithSameNumber._id] },
+              $or: [ { whatsappNumber: num }, { twilioPhoneNumber: num } ]
+            },
+            { $set: { usesTwilioNumber: false } }
+          );
+          logger.info(`App ${otherWithSameNumber.name} (${otherWithSameNumber._id}) set as usesTwilioNumber after delete of ${app.name}`);
+        }
+      }
 
       logger.info(`App deleted (soft): ${app.name} (${app._id}) by user ${userId}`);
 
@@ -372,11 +432,15 @@ class AppController {
         return next(new AppError('Twilio phone number is required', 400));
       }
 
-      // Find the app by Twilio phone number
+      // Find the app by Twilio phone number (uses usesTwilioNumber when multiple apps share the number)
       const app = await App.findByTwilioPhone(twilioPhoneNumber)
         .populate('owner', 'firstName lastName professionDescription website')
         .select('_id name industry owner')
         .exec();
+
+      if (app) {
+        logger.info('App resolved by Twilio number', { twilioPhoneNumber, appId: app._id, appName: app.name });
+      }
 
       if (!app || !app.owner) {
         logger.warn('No app found with Twilio phone number', { 
@@ -628,6 +692,62 @@ class AppController {
       next(error);
     }
   }
+
+  /** Set this app as the one using the Twilio number (for webhooks/leads/flows). Clears usesTwilioNumber on other apps with the same number. */
+  async setUsesTwilioNumber(req, res, next) {
+    try {
+      const userId = req.user.id;
+      const { id } = req.params;
+
+      const app = await AppController.verifyAppOwnership(id, userId);
+      const num = (app.twilioPhoneNumber || app.whatsappNumber)?.trim?.();
+      if (!num) {
+        throw new AppError('This app has no WhatsApp/Twilio number configured. Add the same number used by your Twilio channel in App settings so leads and AI use this app.', 400);
+      }
+
+      app.usesTwilioNumber = true;
+      await app.save();
+
+      await App.updateMany(
+        {
+          owner: userId,
+          _id: { $ne: app._id },
+          $or: [ { whatsappNumber: num }, { twilioPhoneNumber: num } ]
+        },
+        { $set: { usesTwilioNumber: false } }
+      );
+
+      // Invalidate app context cache for all apps with this number so next by-twilio/context returns fresh data (correct app + lead types)
+      const appsWithThisNumber = await App.find({
+        owner: userId,
+        $or: [ { whatsappNumber: num }, { twilioPhoneNumber: num } ]
+      }).select('_id').lean();
+      for (const a of appsWithThisNumber) {
+        try {
+          const key = cacheManager.getAppContextKey(a._id);
+          await cacheManager.del(key);
+        } catch (e) {
+          logger.warn('Failed to invalidate app context cache', { appId: a._id, error: e?.message });
+        }
+      }
+      logger.info(`Invalidated app context cache for ${appsWithThisNumber.length} app(s) with number ${num}`);
+
+      logger.info(`App ${app.name} (${app._id}) set as using Twilio number by user ${userId}`);
+
+      res.status(200).json({
+        status: 'success',
+        message: 'This app is now using the Twilio number for leads and flows',
+        data: {
+          app: {
+            id: app._id,
+            usesTwilioNumber: app.usesTwilioNumber
+          }
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 const appController = new AppController();
@@ -640,5 +760,6 @@ router.get('/:id', authenticateToken, appController.getApp);
 router.put('/:id', authenticateToken, appController.updateApp);
 router.delete('/:id', authenticateToken, appController.deleteApp);
 router.post('/:id/whatsapp/register', authenticateToken, appController.registerWhatsApp);
+router.post('/:id/set-uses-twilio', authenticateToken, appController.setUsesTwilioNumber);
 
 module.exports = router;
