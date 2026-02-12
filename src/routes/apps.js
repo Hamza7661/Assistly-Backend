@@ -733,16 +733,16 @@ class AppController {
       logger.info(`Invalidated app context cache for ${appsWithThisNumber.length} app(s) with number ${num}`);
 
       // Tell AI to clear WhatsApp sessions for this number so next message gets fresh context (new app's lead types)
+      // Optional: add ASSISTLY_INVALIDATE_SESSIONS_SECRET to .env later so backend sends the secret header (AI must set same secret).
       const aiBaseUrl = (process.env.ASSISTLY_AI_BASE_URL || '').replace(/\/$/, '');
       const invalidateSecret = process.env.ASSISTLY_INVALIDATE_SESSIONS_SECRET || '';
-      if (aiBaseUrl && invalidateSecret) {
+      if (aiBaseUrl) {
         try {
+          const headers = { 'Content-Type': 'application/json' };
+          if (invalidateSecret) headers['X-Invalidate-Sessions-Secret'] = invalidateSecret;
           const res = await fetch(`${aiBaseUrl}/api/v1/whatsapp/invalidate-sessions`, {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Invalidate-Sessions-Secret': invalidateSecret
-            },
+            headers,
             body: JSON.stringify({ twilio_phone: num })
           });
           if (res.ok) {
