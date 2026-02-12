@@ -200,7 +200,19 @@ const userSchema = new mongoose.Schema({
       push: { type: Boolean, default: true }
     },
     language: { type: String, default: 'en' },
-    timezone: { type: String, default: 'UTC' }
+    timezone: { type: String, default: 'UTC' },
+    /** Preferred languages for chatbot (labels/synonyms). Max 3. ISO 639-1 codes e.g. ['en','ur','hi']. */
+    preferredLanguages: {
+      type: [String],
+      default: undefined,
+      validate: {
+        validator: function (v) {
+          if (!v || !Array.isArray(v)) return true;
+          return v.length <= 3;
+        },
+        message: 'Preferred languages cannot exceed 3'
+      }
+    }
   },
   metadata: {
     signupSource: { type: String, default: 'web' },
@@ -514,7 +526,8 @@ const userUpdateValidationSchema = Joi.object({
       push: Joi.boolean()
     }),
     language: Joi.string().valid('en', 'es', 'fr', 'de'),
-    timezone: Joi.string()
+    timezone: Joi.string(),
+    preferredLanguages: Joi.array().items(Joi.string().trim().lowercase().max(10)).max(3).optional()
   }),
   website: Joi.string().uri({ scheme: ['http', 'https'] })
 });

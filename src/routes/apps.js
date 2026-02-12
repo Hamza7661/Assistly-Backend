@@ -31,12 +31,17 @@ function getLeadTypesFromIntegration(integration) {
       const text = m.text || '';
       const slug = slugifyLeadValue(text);
       const value = slug || m.value || `custom-${m.id ?? idx + 1}`;
-      return {
+      const out = {
         id: m.id,
         value,
         text,
-        ...(Array.isArray(m.relevantServicePlans) && m.relevantServicePlans.length > 0 && { relevantServicePlans: m.relevantServicePlans })
+        ...(Array.isArray(m.relevantServicePlans) && m.relevantServicePlans.length > 0 && { relevantServicePlans: m.relevantServicePlans }),
+        ...(Array.isArray(m.synonyms) && m.synonyms.length > 0 && { synonyms: m.synonyms.filter(Boolean).map(s => String(s).trim()).filter(Boolean) })
       };
+      if (m.labels && typeof m.labels === 'object') {
+        out.labels = m.labels instanceof Map ? Object.fromEntries(m.labels) : m.labels;
+      }
+      return out;
     });
   }
   return LEAD_TYPES_LIST;
