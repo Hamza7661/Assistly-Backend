@@ -183,18 +183,16 @@ class AppController {
       const userId = req.user.id;
       const { includeInactive } = req.query;
 
-      // Build query: exclude deleted apps (where deletedAt is NOT null)
-      // Apps without deletedAt field will be included (they're not deleted yet)
-      const query = { 
-        owner: userId,
-        $or: [
-          { deletedAt: null },
-          { deletedAt: { $exists: false } }
-        ]
-      };
-      
+      // When includeInactive is true: show all apps (active, inactive, and deleted)
+      // Otherwise: only non-deleted apps, and only active ones
+      const query = { owner: userId };
+
       if (includeInactive !== 'true') {
         query.isActive = true;
+        query.$or = [
+          { deletedAt: null },
+          { deletedAt: { $exists: false } }
+        ];
       }
 
       const apps = await App.find(query)
@@ -214,6 +212,7 @@ class AppController {
             whatsappNumberStatus: app.whatsappNumberStatus,
             usesTwilioNumber: !!app.usesTwilioNumber,
             isActive: app.isActive,
+            deletedAt: app.deletedAt || null,
             createdAt: app.createdAt,
             updatedAt: app.updatedAt
           }))
@@ -386,6 +385,53 @@ class AppController {
       });
 
     } catch (error) {
+      next(error);
+    }
+  }
+
+  async restoreApp(req, res, next) {
+    try {
+      const userId = req.user.id;
+      const { id } = req.params;
+
+      const app = await App.findOne({ _id: id, owner: userId });
+      if (!app) {
+        throw new AppError('App not found', 404);
+      }
+      if (!app.deletedAt) {
+        throw new AppError('App is not deleted', 400);
+      }
+
+      const existingActiveWithSameName = await App.findOne({
+        owner: userId,
+        _id: { $ne: id },
+        name: app.name.trim(),
+        isActive: true,
+        $or: [
+          { deletedAt: null },
+          { deletedAt: { $exists: false } }
+        ]
+      });
+      if (existingActiveWithSameName) {
+        throw new AppError(`An active app named "${app.name}" already exists. Rename or disable that app first, then try restoring again.`, 409);
+      }
+
+      app.deletedAt = null;
+      app.isActive = true;
+      await app.save();
+
+      logger.info(`App restored: ${app.name} (${app._id}) by user ${userId}`);
+
+      res.status(200).json({
+        status: 'success',
+        message: 'App restored successfully',
+        data: { app: app }
+      });
+    } catch (error) {
+      if (error.code === 11000 && error.keyPattern?.owner && error.keyPattern?.name) {
+        next(new AppError('An active app with this name already exists. Rename or disable that app first, then try restoring again.', 409));
+        return;
+      }
       next(error);
     }
   }
@@ -783,6 +829,7 @@ router.get('/by-twilio/:twilioPhoneNumber/context', verifySignedThirdPartyForPar
 router.get('/:id', authenticateToken, appController.getApp);
 router.put('/:id', authenticateToken, appController.updateApp);
 router.delete('/:id', authenticateToken, appController.deleteApp);
+router.post('/:id/restore', authenticateToken, appController.restoreApp);
 router.post('/:id/whatsapp/register', authenticateToken, appController.registerWhatsApp);
 router.post('/:id/set-uses-twilio', authenticateToken, appController.setUsesTwilioNumber);
 
