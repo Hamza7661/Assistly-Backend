@@ -50,6 +50,7 @@ const verifySignedThirdPartyForParamUser = (req, res, next) => {
     const userId = req.params.id || req.params.userId;
     const appId = req.params.appId;
     const twilioPhoneNumber = req.params.twilioPhoneNumber;
+    const socialSenderId = req.params.socialSenderId;
     
     // Build the signing payload based on what parameter is present
     let toSign;
@@ -57,6 +58,9 @@ const verifySignedThirdPartyForParamUser = (req, res, next) => {
     if (twilioPhoneNumber) {
       toSign = `${req.method}\n${basePath}\ntwilioPhoneNumber=${twilioPhoneNumber}\n${tsMs}\n${nonce}`;
       paramInfo = { twilioPhoneNumber };
+    } else if (socialSenderId) {
+      toSign = `${req.method}\n${basePath}\nsocialSenderId=${socialSenderId}\n${tsMs}\n${nonce}`;
+      paramInfo = { socialSenderId };
     } else if (appId) {
       toSign = `${req.method}\n${basePath}\nappId=${appId}\n${tsMs}\n${nonce}`;
       paramInfo = { appId };

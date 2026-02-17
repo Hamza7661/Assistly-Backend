@@ -244,6 +244,9 @@ class AppController {
             whatsappNumberStatus: app.whatsappNumberStatus,
             twilioWhatsAppSenderId: app.twilioWhatsAppSenderId,
             usesTwilioNumber: !!app.usesTwilioNumber,
+            facebookPageId: app.facebookPageId,
+            instagramBusinessAccountId: app.instagramBusinessAccountId,
+            instagramUsername: app.instagramUsername,
             isActive: app.isActive,
             createdAt: app.createdAt,
             updatedAt: app.updatedAt
@@ -322,6 +325,9 @@ class AppController {
             whatsappNumberStatus: app.whatsappNumberStatus,
             twilioWhatsAppSenderId: app.twilioWhatsAppSenderId,
             usesTwilioNumber: !!app.usesTwilioNumber,
+            facebookPageId: app.facebookPageId,
+            instagramBusinessAccountId: app.instagramBusinessAccountId,
+            instagramUsername: app.instagramUsername,
             isActive: app.isActive,
             createdAt: app.createdAt,
             updatedAt: app.updatedAt
@@ -739,6 +745,207 @@ class AppController {
     }
   }
 
+  /** Get app context by social sender (Messenger Facebook Page ID or Instagram Sender ID). Same payload as by-twilio for AI flow. */
+  async getAppContextBySocialSender(req, res, next) {
+    try {
+      const { socialSenderId } = req.params;
+      if (!socialSenderId) {
+        return next(new AppError('Social sender ID (Facebook Page ID or Instagram Sender ID) is required', 400));
+      }
+      const app = await App.findBySocialSenderId(socialSenderId)
+        .populate('owner', 'firstName lastName professionDescription website')
+        .select('_id name industry owner instagramBusinessAccountId instagramAccessToken')
+        .exec();
+      if (!app || !app.owner) {
+        return next(new AppError('No app found with this sender ID', 404));
+      }
+      const user = app.owner;
+      const appId = app._id;
+      const cacheKey = cacheManager.getAppContextKey(appId);
+      const cachedData = await cacheManager.get(cacheKey);
+      if (cachedData) {
+        logger.info('App context served from cache (by social sender)', { socialSenderId, appId });
+        return res.status(200).json(cachedData);
+      }
+      const userApp = { _id: app._id, name: app.name, industry: app.industry };
+      const treatmentPromise = Questionnaire.find({ owner: appId, type: QUESTIONNAIRE_TYPES.SERVICE_PLAN, isActive: true })
+        .select('question answer attachedWorkflows')
+        .populate('attachedWorkflows.workflowId', 'title question questionTypeId isRoot order')
+        .sort({ updatedAt: -1 })
+        .exec();
+      const faqPromise = Questionnaire.find({ owner: appId, type: QUESTIONNAIRE_TYPES.FAQ, isActive: true })
+        .select('question answer')
+        .sort({ updatedAt: -1 })
+        .exec();
+      const integrationPromise = Integration.findOne({ owner: appId }).exec();
+      const workflowPromise = ChatbotWorkflow.find({ owner: appId })
+        .select('title question questionTypeId isRoot order workflowGroupId isActive')
+        .sort({ order: 1, createdAt: 1 })
+        .exec();
+      const [treatmentDocs, faqDocs, integration, workflowDocs] = await Promise.all([
+        treatmentPromise, faqPromise, integrationPromise, workflowPromise
+      ]);
+      const defaultQuestionType = await QuestionType.findOne({ isActive: true }).sort({ id: 1 }).select('id').lean();
+      const defaultQuestionTypeId = defaultQuestionType?.id || 1;
+      const treatmentPlans = treatmentDocs.map(d => ({
+        question: d.question,
+        answer: d.answer,
+        attachedWorkflows: (d.attachedWorkflows || [])
+          .filter(aw => aw.workflowId)
+          .sort((a, b) => (a.order || 0) - (b.order || 0))
+          .map(aw => ({
+            workflowId: aw.workflowId._id || aw.workflowId,
+            order: aw.order || 0,
+            workflow: aw.workflowId ? {
+              _id: aw.workflowId._id,
+              title: aw.workflowId.title,
+              question: aw.workflowId.question,
+              questionTypeId: aw.workflowId.questionTypeId,
+              isRoot: aw.workflowId.isRoot,
+              order: aw.workflowId.order
+            } : null
+          }))
+      }));
+      const faq = faqDocs.map(d => ({ question: d.question, answer: d.answer }));
+      const workflowMap = {};
+      const rootWorkflows = [];
+      workflowDocs.forEach(w => {
+        const workflowData = {
+          _id: w._id,
+          title: w.title,
+          question: w.question,
+          questionTypeId: w.questionTypeId,
+          isRoot: w.isRoot,
+          order: w.order,
+          workflowGroupId: w.workflowGroupId,
+          isActive: w.isActive
+        };
+        if (w.isRoot || !w.workflowGroupId) {
+          const groupId = w._id.toString();
+          workflowMap[groupId] = { ...workflowData, questions: [] };
+          rootWorkflows.push(workflowMap[groupId]);
+        } else {
+          const groupId = w.workflowGroupId ? w.workflowGroupId.toString() : w._id.toString();
+          if (!workflowMap[groupId]) {
+            const rootWorkflow = workflowDocs.find(rw =>
+              (rw._id.toString() === groupId && rw.isRoot) ||
+              (rw.workflowGroupId && rw.workflowGroupId.toString() === groupId && rw.isRoot)
+            );
+            if (rootWorkflow) {
+              workflowMap[groupId] = {
+                _id: rootWorkflow._id,
+                title: rootWorkflow.title,
+                question: rootWorkflow.question,
+                questionTypeId: rootWorkflow.questionTypeId,
+                isRoot: rootWorkflow.isRoot,
+                order: rootWorkflow.order,
+                workflowGroupId: rootWorkflow.workflowGroupId,
+                isActive: rootWorkflow.isActive,
+                questions: []
+              };
+              rootWorkflows.push(workflowMap[groupId]);
+            } else {
+              workflowMap[groupId] = {
+                _id: groupId,
+                title: 'Unnamed Workflow',
+                question: '',
+                questionTypeId: defaultQuestionTypeId,
+                isRoot: true,
+                order: 0,
+                isActive: true,
+                questions: []
+              };
+            }
+          }
+          workflowMap[groupId].questions.push(workflowData);
+        }
+      });
+      rootWorkflows.forEach(workflow => {
+        if (workflow.questions) {
+          workflow.questions = workflow.questions
+            .filter(q => q.isActive !== false)
+            .sort((a, b) => (a.order || 0) - (b.order || 0));
+        }
+        if (workflow.isActive === false) {
+          const index = rootWorkflows.indexOf(workflow);
+          if (index > -1) rootWorkflows.splice(index, 1);
+        }
+      });
+      treatmentPlans.forEach(plan => {
+        if (plan.attachedWorkflows && Array.isArray(plan.attachedWorkflows)) {
+          plan.attachedWorkflows.forEach(attachedFlow => {
+            if (attachedFlow.workflow && attachedFlow.workflow._id) {
+              const existingIndex = rootWorkflows.findIndex(w =>
+                w._id && w._id.toString() === attachedFlow.workflow._id.toString()
+              );
+              if (existingIndex === -1) {
+                rootWorkflows.push({
+                  ...attachedFlow.workflow,
+                  treatmentPlanOrder: attachedFlow.order || 0,
+                  treatmentPlanId: plan.question,
+                  questions: attachedFlow.workflow.questions || []
+                });
+              } else {
+                rootWorkflows[existingIndex].treatmentPlanOrder = attachedFlow.order || 0;
+                rootWorkflows[existingIndex].treatmentPlanId = plan.question;
+              }
+            }
+          });
+        }
+      });
+      rootWorkflows.sort((a, b) => {
+        const aOrder = a.treatmentPlanOrder !== undefined ? a.treatmentPlanOrder : (a.order || 0);
+        const bOrder = b.treatmentPlanOrder !== undefined ? b.treatmentPlanOrder : (b.order || 0);
+        return aOrder !== bOrder ? aOrder - bOrder : (a.order || 0) - (b.order || 0);
+      });
+      const integrationData = integration ? {
+        assistantName: integration.assistantName,
+        companyName: integration.companyName || '',
+        greeting: integration.greeting,
+        validateEmail: integration.validateEmail,
+        validatePhoneNumber: integration.validatePhoneNumber,
+        googleReviewEnabled: !!integration.googleReviewEnabled,
+        googleReviewUrl: integration.googleReviewUrl || null
+      } : {
+        assistantName: 'Assistant',
+        companyName: '',
+        greeting: process.env.DEFAULT_GREETING || 'Hi this is {assistantName} your virtual ai assistant from {companyName}. How can I help you today?',
+        validateEmail: true,
+        validatePhoneNumber: true,
+        googleReviewEnabled: false,
+        googleReviewUrl: null
+      };
+      const responseData = {
+        status: 'success',
+        data: {
+          user: {
+            id: user._id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            professionDescription: user.professionDescription,
+            website: user.website
+          },
+          app: userApp ? { id: userApp._id, name: userApp.name, industry: userApp.industry } : null,
+          leadTypes: getLeadTypesFromIntegration(integration),
+          treatmentPlans,
+          faq,
+          integration: integrationData,
+          workflows: rootWorkflows,
+          country: process.env.COUNTRY,
+          // Include Instagram credentials if this is an Instagram Business Account
+          instagramBusinessAccountId: app.instagramBusinessAccountId || null,
+          instagramAccessToken: app.instagramAccessToken || null
+        }
+      };
+      await cacheManager.set(cacheKey, responseData, 300);
+      logger.info('App context retrieved by social sender (app-wise)', { socialSenderId, appId, appName: app.name });
+      res.status(200).json(responseData);
+    } catch (error) {
+      logger.error('Error retrieving app context by social sender', { socialSenderId: req.params.socialSenderId, error: error.message });
+      next(error);
+    }
+  }
+
   /** Set this app as the one using the Twilio number (for webhooks/leads/flows). Clears usesTwilioNumber on other apps with the same number. */
   async setUsesTwilioNumber(req, res, next) {
     try {
@@ -826,6 +1033,7 @@ const appController = new AppController();
 router.post('/', authenticateToken, appController.createApp);
 router.get('/', authenticateToken, appController.getApps);
 router.get('/by-twilio/:twilioPhoneNumber/context', verifySignedThirdPartyForParamUser, appController.getAppContextByTwilioNumber);
+router.get('/by-social-sender/:socialSenderId/context', verifySignedThirdPartyForParamUser, appController.getAppContextBySocialSender);
 router.get('/:id', authenticateToken, appController.getApp);
 router.put('/:id', authenticateToken, appController.updateApp);
 router.delete('/:id', authenticateToken, appController.deleteApp);
