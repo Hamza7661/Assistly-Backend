@@ -171,6 +171,55 @@ class IntegrationController {
         logger.warn('Failed to invalidate app context cache', { appId, error: cacheErr?.message });
       }
 
+      // Also clear AI service cache for WhatsApp users (so they get updated greeting/lead types immediately)
+      // Fire-and-forget: don't wait for AI response to avoid slowing down Integration update
+      (async () => {
+        try {
+          const { App } = require('../models/App');
+          const app = await App.findById(appId).select('twilioPhoneNumber whatsappNumber').lean();
+          const twilioPhone = (app?.twilioPhoneNumber || app?.whatsappNumber || '').trim();
+          
+          if (twilioPhone) {
+            // Use deployed AI service by default, can override with ASSISTLY_AI_BASE_URL env var
+            const aiBaseUrl = (process.env.ASSISTLY_AI_BASE_URL || 'https://assistly-ai-eu.onrender.com').replace(/\/$/, '');
+            const signingSecret = process.env.THIRD_PARTY_SIGNING_SECRET || '';
+            
+            if (aiBaseUrl) {
+              const headers = { 'Content-Type': 'application/json' };
+              // Use same signing secret as third-party API authentication
+              if (signingSecret) headers['X-Invalidate-Sessions-Secret'] = signingSecret;
+              
+              const res = await fetch(`${aiBaseUrl}/api/v1/whatsapp/invalidate-sessions`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ twilio_phone: twilioPhone })
+              });
+              
+              if (res.ok) {
+                const data = await res.json().catch(() => ({}));
+                logger.info('Cleared AI WhatsApp sessions for app after integration update', { 
+                  appId, 
+                  twilioPhone, 
+                  removedSessions: data.removed_sessions 
+                });
+              } else {
+                logger.warn('AI invalidate-sessions returned non-OK after integration update', { 
+                  status: res.status, 
+                  appId, 
+                  twilioPhone 
+                });
+              }
+            }
+          }
+        } catch (aiErr) {
+          // Don't fail the integration update if AI invalidation fails
+          logger.warn('Failed to invalidate AI WhatsApp sessions after integration update', { 
+            appId, 
+            error: aiErr?.message 
+          });
+        }
+      })(); // Immediately invoke async IIFE (fire-and-forget)
+
       logger.info('Updated integration settings', { appId, updatedFields: Object.keys(value) });
 
       res.status(200).json({

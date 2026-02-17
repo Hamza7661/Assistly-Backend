@@ -779,13 +779,14 @@ class AppController {
       logger.info(`Invalidated app context cache for ${appsWithThisNumber.length} app(s) with number ${num}`);
 
       // Tell AI to clear WhatsApp sessions for this number so next message gets fresh context (new app's lead types)
-      // Optional: add ASSISTLY_INVALIDATE_SESSIONS_SECRET to .env later so backend sends the secret header (AI must set same secret).
-      const aiBaseUrl = (process.env.ASSISTLY_AI_BASE_URL || '').replace(/\/$/, '');
-      const invalidateSecret = process.env.ASSISTLY_INVALIDATE_SESSIONS_SECRET || '';
+      // Use same signing secret as third-party API authentication
+      // Use deployed AI service by default, can override with ASSISTLY_AI_BASE_URL env var
+      const aiBaseUrl = (process.env.ASSISTLY_AI_BASE_URL || 'https://assistly-ai-eu.onrender.com').replace(/\/$/, '');
+      const signingSecret = process.env.THIRD_PARTY_SIGNING_SECRET || '';
       if (aiBaseUrl) {
         try {
           const headers = { 'Content-Type': 'application/json' };
-          if (invalidateSecret) headers['X-Invalidate-Sessions-Secret'] = invalidateSecret;
+          if (signingSecret) headers['X-Invalidate-Sessions-Secret'] = signingSecret;
           const res = await fetch(`${aiBaseUrl}/api/v1/whatsapp/invalidate-sessions`, {
             method: 'POST',
             headers,
