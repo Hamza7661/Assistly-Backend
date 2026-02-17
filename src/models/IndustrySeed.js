@@ -28,7 +28,9 @@ const industrySeedSchema = new mongoose.Schema({
   leadTypes: [{
     id: { type: Number, required: true },
     value: { type: String, required: true, trim: true },
-    text: { type: String, required: true, trim: true }
+    text: { type: String, required: true, trim: true },
+    linkedWorkflow: { type: String, trim: true }, // Optional: links to workflow title
+    linkedService: { type: String, trim: true } // Optional: links to service plan name
   }],
   // Default service plans/treatment plans for this industry
   servicePlans: [{

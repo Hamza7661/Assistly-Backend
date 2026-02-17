@@ -141,9 +141,9 @@ class AppController {
 
       logger.info(`New app created: ${app.name} (${app._id}) by user ${userId}`);
 
-      // Copy industry-based seed data to the new app
+      // Copy industry-based seed data to the new app (with progress updates via WebSocket)
       try {
-        const seedResults = await SeedDataService.copySeedDataToApp(app._id, industry);
+        const seedResults = await SeedDataService.copySeedDataToApp(app._id, industry, userId);
         logger.info(`Seed data copied to app ${app._id}:`, seedResults);
       } catch (seedError) {
         // Log error but don't fail app creation if seed data copy fails
