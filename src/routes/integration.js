@@ -180,12 +180,14 @@ class IntegrationController {
           const twilioPhone = (app?.twilioPhoneNumber || app?.whatsappNumber || '').trim();
           
           if (twilioPhone) {
-            const aiBaseUrl = (process.env.ASSISTLY_AI_BASE_URL || '').replace(/\/$/, '');
-            const invalidateSecret = process.env.ASSISTLY_INVALIDATE_SESSIONS_SECRET || '';
+            // Use deployed AI service by default, can override with ASSISTLY_AI_BASE_URL env var
+            const aiBaseUrl = (process.env.ASSISTLY_AI_BASE_URL || 'https://assistly-ai-eu.onrender.com').replace(/\/$/, '');
+            const signingSecret = process.env.THIRD_PARTY_SIGNING_SECRET || '';
             
             if (aiBaseUrl) {
               const headers = { 'Content-Type': 'application/json' };
-              if (invalidateSecret) headers['X-Invalidate-Sessions-Secret'] = invalidateSecret;
+              // Use same signing secret as third-party API authentication
+              if (signingSecret) headers['X-Invalidate-Sessions-Secret'] = signingSecret;
               
               const res = await fetch(`${aiBaseUrl}/api/v1/whatsapp/invalidate-sessions`, {
                 method: 'POST',
