@@ -32,10 +32,13 @@ const INDUSTRY_LEAD_TYPES = {
     { id: 4, value: 'contract-drafting', text: 'I need contract drafting assistance' }
   ],
   FOOD: [
-    { id: 1, value: 'order-online', text: 'I want to place an order for delivery or pickup' },
-    { id: 2, value: 'catering-inquiry', text: 'I need catering services for an event' },
-    { id: 3, value: 'table-reservation', text: 'I would like to make a dining reservation' },
-    { id: 4, value: 'menu-information', text: 'I want to see your menu and special items' }
+    { id: 1, value: 'order', text: 'Order', linkedWorkflow: 'Delivery Order Workflow', linkedService: 'Delivery Order' },
+    { id: 2, value: 'menu', text: 'Menu', linkedWorkflow: 'Menu WorkFlow', linkedService: 'Menu Inquiry' },
+    { id: 3, value: 'catering', text: 'Catering', linkedWorkflow: 'Catering Flow', linkedService: 'Event Catering Services' },
+    { id: 4, value: 'reservation', text: 'Reservation', linkedWorkflow: 'Reservation WorkFlow', linkedService: 'Table Reservation Service' },
+    { id: 5, value: 'allergies--halal', text: 'Allergies / Halal', linkedWorkflow: 'Allergies / Halal Workflow', linkedService: 'Allergies/ Halal Inquiry' },
+    { id: 6, value: 'info--contact', text: 'Info & Contact', linkedWorkflow: 'Info & Contact Workflow', linkedService: 'Info & Contact' },
+    { id: 7, value: 'complaint', text: 'Complaint', linkedWorkflow: 'Complaint Workflow', linkedService: 'Register Complaint' }
   ],
   AUTOMOTIVE: [
     { id: 1, value: 'service-appointment', text: 'I need to schedule a service appointment' },
@@ -404,87 +407,60 @@ const seedDataTemplates = {
   [INDUSTRIES.FOOD]: {
     workflows: [
       {
-        title: 'Welcome',
-        question: 'Hello! Welcome to our authentic biryani restaurant. Experience the magic of premium quality ingredients and delectable biryani dishes. How can I help you today?',
+        title: 'Delivery Order Workflow',
+        question: 'Delivery Order Workflow',
         questionTypeId: 1,
         isRoot: true,
-        order: 0,
-        children: [
-          {
-            title: 'Order Online',
-            question: 'Would you like to place an order for delivery or pickup? We offer fresh biryani delivered right to your doorstep!',
-            questionTypeId: 1,
-            isRoot: false,
-            order: 1,
-            children: [
-              {
-                title: 'Delivery',
-                question: 'Great! We offer delivery service. What would you like to order?',
-                questionTypeId: 1,
-                isRoot: false,
-                order: 1
-              },
-              {
-                title: 'Pickup',
-                question: 'Perfect! You can place an order for pickup. What would you like?',
-                questionTypeId: 1,
-                isRoot: false,
-                order: 2
-              }
-            ]
-          },
-          {
-            title: 'View Menu',
-            question: 'Would you like to see our menu? We have a wide variety of biryanis, continental dishes, and special items.',
-            questionTypeId: 1,
-            isRoot: false,
-            order: 2,
-            children: [
-              {
-                title: 'Biryani Options',
-                question: 'We offer Chicken, Beef, Lamb, and Vegetable Biryani in Regular, Economy, and 1KG sizes. Which would you like?',
-                questionTypeId: 1,
-                isRoot: false,
-                order: 1
-              },
-              {
-                title: 'Special Items',
-                question: 'We have special items available on weekends including Beef Biryani, Nihari, and more. Would you like to know more?',
-                questionTypeId: 1,
-                isRoot: false,
-                order: 2
-              },
-              {
-                title: 'Continental & Other',
-                question: 'We also offer Continental dishes, Fried Specials, Vegetarian options, Naan, Desserts, and Beverages. What interests you?',
-                questionTypeId: 1,
-                isRoot: false,
-                order: 3
-              }
-            ]
-          },
-          {
-            title: 'Catering Services',
-            question: 'Are you interested in our exceptional catering services for your special event? We offer customized menus for parties and gatherings.',
-            questionTypeId: 1,
-            isRoot: false,
-            order: 3
-          },
-          {
-            title: 'Dine-In Reservation',
-            question: 'Would you like to make a reservation for our cozy dining facility? We offer a perfect atmosphere to enjoy delicious meals.',
-            questionTypeId: 1,
-            isRoot: false,
-            order: 4
-          },
-          {
-            title: 'Location & Contact',
-            question: 'Would you like to know our location, contact information, or how to reach us?',
-            questionTypeId: 1,
-            isRoot: false,
-            order: 5
-          }
-        ]
+        order: 0
+      },
+      {
+        title: 'Pickup Order Workflow',
+        question: 'Pickup Order Workflow',
+        questionTypeId: 1,
+        isRoot: true,
+        order: 1
+      },
+      {
+        title: 'Menu WorkFlow',
+        question: 'Menu WorkFlow',
+        questionTypeId: 1,
+        isRoot: true,
+        order: 2
+      },
+      {
+        title: 'Catering Flow',
+        question: 'Catering Flow',
+        questionTypeId: 1,
+        isRoot: true,
+        order: 3
+      },
+      {
+        title: 'Reservation WorkFlow',
+        question: 'Reservation WorkFlow',
+        questionTypeId: 1,
+        isRoot: true,
+        order: 4
+      },
+      {
+        title: 'Allergies / Halal Workflow',
+        question: 'Allergies / Halal Workflow',
+        questionTypeId: 1,
+        isRoot: true,
+        order: 5
+      },
+      {
+        title: 'Info & Contact Workflow',
+        question: 'Info & Contact Workflow',
+        questionTypeId: 1,
+        isRoot: true,
+        order: 6
+      },
+      {
+        title: 'Complaint Workflow',
+        question: 'Complaint Workflow',
+        questionTypeId: 1,
+        isRoot: true,
+        order: 7
       }
     ],
     faqs: [
@@ -540,23 +516,43 @@ const seedDataTemplates = {
     leadTypes: INDUSTRY_LEAD_TYPES.FOOD,
     servicePlans: [
       {
-        name: 'Dine-In Experience',
-        description: 'Enjoy our authentic biryani and full menu in our cozy restaurant dining facility. Perfect for a memorable dining experience with family and friends.',
+        name: 'Info & Contact',
+        description: 'Info & Contact',
         price: { amount: 0, currency: 'GBP' }
       },
       {
-        name: 'Delivery Service',
-        description: 'Fresh biryani delivered right to your doorstep in London. Order online or call us for convenient home delivery.',
+        name: 'Menu Inquiry',
+        description: 'Menu',
         price: { amount: 0, currency: 'GBP' }
       },
       {
-        name: 'Pickup Service',
-        description: 'Place your order and pick it up from our restaurant. Fast and convenient for those on the go.',
+        name: 'Register Complaint',
+        description: 'Register Complaint',
         price: { amount: 0, currency: 'GBP' }
       },
       {
-        name: 'Catering Package',
-        description: 'Exceptional catering services for your special events, parties, and gatherings. Customizable menus with Chicken Biryani, Beef Biryani, Mutton Korma, and more. Perfect for weddings, corporate events, and celebrations.',
+        name: 'Table Reservation Service',
+        description: 'Table Reservation Service',
+        price: { amount: 0, currency: 'GBP' }
+      },
+      {
+        name: 'Allergies/ Halal Inquiry',
+        description: 'Allergies/ Halal Inquiry',
+        price: { amount: 0, currency: 'GBP' }
+      },
+      {
+        name: 'Pickup Order',
+        description: 'Pickup Order',
+        price: { amount: 0, currency: 'GBP' }
+      },
+      {
+        name: 'Delivery Order',
+        description: 'Customer wants food delivered to their location',
+        price: { amount: 0, currency: 'GBP' }
+      },
+      {
+        name: 'Event Catering Services',
+        description: 'Professional catering for weddings, corporate events, parties, and special occasions',
         price: { amount: 0, currency: 'GBP' }
       }
     ],
@@ -1211,13 +1207,14 @@ const initializeSeedData = async () => {
         const existing = await IndustrySeed.findOne({ industry });
         if (existing) {
           console.log(`Seed data for ${industry} already exists. Updating...`);
-          await IndustrySeed.findOneAndUpdate(
+          await IndustrySeed.replaceOne(
             { industry },
             {
-              ...seedData,
               industry,
+              ...seedData,
               isActive: true,
-              updatedAt: new Date()
+              updatedAt: new Date(),
+              createdAt: existing.createdAt
             }
           );
           console.log(`✓ Updated seed data for ${industry}`);

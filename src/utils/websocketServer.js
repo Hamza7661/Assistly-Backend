@@ -59,6 +59,21 @@ class WebSocketServer {
     }
   }
 
+  // Broadcast app creation progress to a specific user
+  broadcastAppCreationProgress(userId, progressData) {
+    if (!this.io) {
+      logger.warn('WebSocket server not initialized');
+      return;
+    }
+
+    try {
+      this.io.to(`user_${userId}`).emit('app_creation_progress', progressData);
+      logger.info(`Broadcasted app_creation_progress to user ${userId}:`, progressData.step);
+    } catch (error) {
+      logger.error('Error broadcasting app creation progress:', error);
+    }
+  }
+
   // Broadcast to all connected users
   broadcastToAll(data) {
     if (!this.io) {
