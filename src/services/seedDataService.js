@@ -37,8 +37,9 @@ class SeedDataService {
 
       emitProgress('initializing', 'Initializing seed data...', 0, 5);
 
-      // Get industry seed data
-      const seedData = await IndustrySeed.findOne({ industry, isActive: true });
+      // Get industry seed data (normalize industry for lookup, e.g. "Food & Restaurant" -> "food")
+      const industryKey = (industry || '').toString().trim().toLowerCase();
+      const seedData = await IndustrySeed.findOne({ industry: industryKey, isActive: true });
       if (!seedData) {
         logger.warn(`No seed data found for industry: ${industry}. App ${appId} will be created without default content.`);
         return { workflows: 0, faqs: 0, leadTypes: 0, servicePlans: 0 };
@@ -251,16 +252,20 @@ class SeedDataService {
     }
     
     const planDocuments = servicePlans.map(plan => {
-      // Get linked workflows for this service plan
-      const linkedWorkflows = serviceToWorkflowMap.get(plan.name) || [];
-      
+      // Get linked workflows for this service plan (Questionnaire expects { workflowId, order }[])
+      const linkedWorkflowIds = [...new Set(serviceToWorkflowMap.get(plan.name) || [])];
+      const attachedWorkflows = linkedWorkflowIds.map((workflowId, index) => ({
+        workflowId,
+        order: index
+      }));
+
       return {
         owner: appId,
         type: QUESTIONNAIRE_TYPES.SERVICE_PLAN,
         question: plan.name,
         answer: plan.description || '',
         isActive: true,
-        attachedWorkflows: [...new Set(linkedWorkflows)] // Remove duplicates
+        attachedWorkflows
       };
     });
 

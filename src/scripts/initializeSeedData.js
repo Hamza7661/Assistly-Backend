@@ -408,59 +408,83 @@ const seedDataTemplates = {
     workflows: [
       {
         title: 'Delivery Order Workflow',
-        question: 'Delivery Order Workflow',
+        question: 'Would you like to place an order for delivery? Please share your address and what you would like to order.',
         questionTypeId: 1,
         isRoot: true,
-        order: 0
+        order: 0,
+        children: [
+          { title: 'Delivery Order Workflow', question: 'Would you like to place an order for delivery? Please share your address and what you would like to order.', questionTypeId: 1, isRoot: false, order: 0 }
+        ]
       },
       {
         title: 'Pickup Order Workflow',
-        question: 'Pickup Order Workflow',
+        question: 'Would you like to place an order for pickup? When would you like to collect your order?',
         questionTypeId: 1,
         isRoot: true,
-        order: 1
+        order: 1,
+        children: [
+          { title: 'Pickup Order Workflow', question: 'Would you like to place an order for pickup? When would you like to collect your order?', questionTypeId: 1, isRoot: false, order: 0 }
+        ]
       },
       {
         title: 'Menu WorkFlow',
-        question: 'Menu WorkFlow',
+        question: 'What would you like to know about our menu? You can ask about dishes, ingredients, portions, or dietary options.',
         questionTypeId: 1,
         isRoot: true,
-        order: 2
+        order: 2,
+        children: [
+          { title: 'Menu WorkFlow', question: 'What would you like to know about our menu? You can ask about dishes, ingredients, portions, or dietary options.', questionTypeId: 1, isRoot: false, order: 0 }
+        ]
       },
       {
         title: 'Catering Flow',
-        question: 'Catering Flow',
+        question: 'Tell us about your event: date, number of guests, and any dietary requirements. We will suggest a catering package for you.',
         questionTypeId: 1,
         isRoot: true,
-        order: 3
+        order: 3,
+        children: [
+          { title: 'Catering Flow', question: 'Tell us about your event: date, number of guests, and any dietary requirements. We will suggest a catering package for you.', questionTypeId: 1, isRoot: false, order: 0 }
+        ]
       },
       {
         title: 'Reservation WorkFlow',
-        question: 'Reservation WorkFlow',
+        question: 'When would you like to reserve a table? Please share the date, time, and number of guests.',
         questionTypeId: 1,
         isRoot: true,
-        order: 4
+        order: 4,
+        children: [
+          { title: 'Reservation WorkFlow', question: 'When would you like to reserve a table? Please share the date, time, and number of guests.', questionTypeId: 1, isRoot: false, order: 0 }
+        ]
       },
       {
         title: 'Allergies / Halal Workflow',
-        question: 'Allergies / Halal Workflow',
+        question: 'Do you have any allergies or dietary requirements (e.g. halal, vegetarian)? Please tell us so we can guide you to suitable options.',
         questionTypeId: 1,
         isRoot: true,
-        order: 5
+        order: 5,
+        children: [
+          { title: 'Allergies / Halal Workflow', question: 'Do you have any allergies or dietary requirements (e.g. halal, vegetarian)? Please tell us so we can guide you to suitable options.', questionTypeId: 1, isRoot: false, order: 0 }
+        ]
       },
       {
         title: 'Info & Contact Workflow',
-        question: 'Info & Contact Workflow',
+        question: 'What would you like to know? You can ask about our location, opening hours, or how to get in touch.',
         questionTypeId: 1,
         isRoot: true,
-        order: 6
+        order: 6,
+        children: [
+          { title: 'Info & Contact Workflow', question: 'What would you like to know? You can ask about our location, opening hours, or how to get in touch.', questionTypeId: 1, isRoot: false, order: 0 }
+        ]
       },
       {
         title: 'Complaint Workflow',
-        question: 'Complaint Workflow',
+        question: 'We are sorry to hear something was not right. Please describe the issue and your order details so we can help resolve it.',
         questionTypeId: 1,
         isRoot: true,
-        order: 7
+        order: 7,
+        children: [
+          { title: 'Complaint Workflow', question: 'We are sorry to hear something was not right. Please describe the issue and your order details so we can help resolve it.', questionTypeId: 1, isRoot: false, order: 0 }
+        ]
       }
     ],
     faqs: [
