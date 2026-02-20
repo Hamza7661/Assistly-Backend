@@ -1,6 +1,29 @@
 const mongoose = require('mongoose');
 const Joi = require('joi');
 
+// Sub-schema for branching options (multiple-choice with scenario linking)
+const workflowOptionSchema = new mongoose.Schema({
+  text: {
+    type: String,
+    required: true,
+    trim: true,
+    maxlength: 200
+  },
+  nextQuestionId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'ChatbotWorkflow',
+    default: null
+  },
+  isTerminal: {
+    type: Boolean,
+    default: false
+  },
+  order: {
+    type: Number,
+    default: 0
+  }
+}, { _id: true });
+
 // Schema for workflow questions
 const chatbotWorkflowSchema = new mongoose.Schema({
   owner: {
@@ -31,6 +54,19 @@ const chatbotWorkflowSchema = new mongoose.Schema({
     type: Number,
     required: true,
     default: 1 
+  },
+  // Multiple-choice options with optional branching to different next questions
+  options: {
+    type: [workflowOptionSchema],
+    default: []
+  },
+  // File attachment: admin-uploaded PDF/document that the bot will offer for download
+  attachment: {
+    hasFile: { type: Boolean, default: false },
+    data: { type: Buffer, default: null },
+    contentType: { type: String, default: null },
+    filename: { type: String, default: null },
+    size: { type: Number, default: null }
   },
   isRoot: {
     type: Boolean,
@@ -68,11 +104,20 @@ chatbotWorkflowSchema.pre('save', function(next) {
 const ChatbotWorkflow = mongoose.model('ChatbotWorkflow', chatbotWorkflowSchema);
 
 // Validation schemas
+const workflowOptionValidationSchema = Joi.object({
+  _id: Joi.string().optional(),
+  text: Joi.string().max(200).required(),
+  nextQuestionId: Joi.string().allow(null, '').optional(),
+  isTerminal: Joi.boolean().optional(),
+  order: Joi.number().optional()
+});
+
 const workflowValidationSchema = Joi.object({
   title: Joi.string().max(200).required(),
   question: Joi.string().max(500).required(),
   questionTypeId: Joi.number().integer().min(1).default(1), 
   workflowGroupId: Joi.string().allow(null, '').optional(),
+  options: Joi.array().items(workflowOptionValidationSchema).optional(),
   isRoot: Joi.boolean().optional(),
   isActive: Joi.boolean().optional(),
   order: Joi.number().optional()
@@ -81,8 +126,9 @@ const workflowValidationSchema = Joi.object({
 const workflowUpdateValidationSchema = Joi.object({
   title: Joi.string().max(200).optional(),
   question: Joi.string().max(500).optional(),
-  questionTypeId: Joi.number().integer().min(1).optional(), // Numeric ID from QuestionType table
+  questionTypeId: Joi.number().integer().min(1).optional(),
   workflowGroupId: Joi.string().allow(null, '').optional(),
+  options: Joi.array().items(workflowOptionValidationSchema).optional(),
   isRoot: Joi.boolean().optional(),
   isActive: Joi.boolean().optional(),
   order: Joi.number().optional()

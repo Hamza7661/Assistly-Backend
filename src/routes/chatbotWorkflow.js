@@ -11,6 +11,7 @@ const { AppError } = require('../utils/errorHandler');
 const { logger } = require('../utils/logger');
 const { authenticateToken, requireUserOrAdmin } = require('../middleware/auth');
 const { verifyAppOwnership } = require('../middleware/appOwnership');
+const { uploadDocumentSingle } = require('../middleware/upload');
 
 const router = express.Router();
 
@@ -123,7 +124,11 @@ router.get('/apps/:appId', authenticateToken, verifyAppOwnership, async (req, re
     const filter = { owner: appId };
     if (!includeInactive) filter.isActive = true;
     
-    const workflows = await ChatbotWorkflow.find(filter).sort({ order: 1, createdAt: 1 }).exec();
+    // Exclude binary attachment data – only return metadata (hasFile, filename, contentType, size)
+    const workflows = await ChatbotWorkflow.find(filter)
+      .select('-attachment.data')
+      .sort({ order: 1, createdAt: 1 })
+      .exec();
     res.status(200).json({ 
       status: 'success', 
       data: { workflows, count: workflows.length } 
@@ -141,7 +146,6 @@ router.get('/', authenticateToken, requireUserOrAdmin, async (req, res, next) =>
   try {
     const { includeInactive } = req.query;
     
-    // Validate user ID
     if (!req.user || !req.user.id) {
       throw new AppError('User ID is required', 400);
     }
@@ -149,7 +153,10 @@ router.get('/', authenticateToken, requireUserOrAdmin, async (req, res, next) =>
     const filter = { owner: req.user.id };
     if (!includeInactive) filter.isActive = true;
     
-    const workflows = await ChatbotWorkflow.find(filter).sort({ order: 1, createdAt: 1 }).exec();
+    const workflows = await ChatbotWorkflow.find(filter)
+      .select('-attachment.data')
+      .sort({ order: 1, createdAt: 1 })
+      .exec();
     res.status(200).json({ 
       status: 'success', 
       data: { workflows, count: workflows.length } 
@@ -182,7 +189,10 @@ router.get('/apps/:appId/grouped', authenticateToken, verifyAppOwnership, async 
     
     let allWorkflows;
     try {
-      allWorkflows = await ChatbotWorkflow.find(filter).sort({ order: 1, createdAt: 1 }).exec();
+      allWorkflows = await ChatbotWorkflow.find(filter)
+        .select('-attachment.data')
+        .sort({ order: 1, createdAt: 1 })
+        .exec();
     } catch (findErr) {
       if (findErr.name === 'CastError') {
         logger.error('CastError in ChatbotWorkflow.find', { 
@@ -348,7 +358,10 @@ router.get('/grouped', authenticateToken, requireUserOrAdmin, async (req, res, n
     
     let allWorkflows;
     try {
-      allWorkflows = await ChatbotWorkflow.find(filter).sort({ order: 1, createdAt: 1 }).exec();
+      allWorkflows = await ChatbotWorkflow.find(filter)
+        .select('-attachment.data')
+        .sort({ order: 1, createdAt: 1 })
+        .exec();
     } catch (findErr) {
       if (findErr.name === 'CastError') {
         logger.error('CastError in ChatbotWorkflow.find', { 
@@ -477,7 +490,9 @@ router.get('/grouped', authenticateToken, requireUserOrAdmin, async (req, res, n
 router.get('/apps/:appId/:id', authenticateToken, verifyAppOwnership, async (req, res, next) => {
   try {
     const appId = req.appId;
-    const workflow = await ChatbotWorkflow.findOne({ _id: req.params.id, owner: appId }).exec();
+    const workflow = await ChatbotWorkflow.findOne({ _id: req.params.id, owner: appId })
+      .select('-attachment.data')
+      .exec();
     if (!workflow) {
       throw new AppError('Workflow not found', 404);
     }
@@ -491,7 +506,9 @@ router.get('/apps/:appId/:id', authenticateToken, verifyAppOwnership, async (req
 // Get single workflow by ID - LEGACY ROUTE
 router.get('/:id', authenticateToken, requireUserOrAdmin, async (req, res, next) => {
   try {
-    const workflow = await ChatbotWorkflow.findOne({ _id: req.params.id, owner: req.user.id }).exec();
+    const workflow = await ChatbotWorkflow.findOne({ _id: req.params.id, owner: req.user.id })
+      .select('-attachment.data')
+      .exec();
     if (!workflow) {
       throw new AppError('Workflow not found', 404);
     }
@@ -666,7 +683,7 @@ router.get('/public/:ownerId', async (req, res, next) => {
     const filter = { owner: ownerId, isActive: true };
     
     const workflows = await ChatbotWorkflow.find(filter)
-      .select('title question questionTypeId isRoot order')
+      .select('title question questionTypeId options attachment.hasFile attachment.filename isRoot order')
       .sort({ order: 1, createdAt: 1 })
       .exec();
     
@@ -676,6 +693,90 @@ router.get('/public/:ownerId', async (req, res, next) => {
     });
   } catch (err) {
     if (err.name === 'CastError') return next(new AppError('Invalid owner ID format', 400));
+    next(err);
+  }
+});
+
+// ── Attachment routes ──────────────────────────────────────────────────────────
+
+// Upload/replace file attachment for a workflow question (admin only)
+router.put('/apps/:appId/:id/attachment', authenticateToken, verifyAppOwnership, uploadDocumentSingle('attachment'), async (req, res, next) => {
+  try {
+    if (!req.file) {
+      throw new AppError('No file provided', 400);
+    }
+
+    const appId = req.appId;
+    const workflow = await ChatbotWorkflow.findOne({ _id: req.params.id, owner: appId }).exec();
+    if (!workflow) {
+      throw new AppError('Workflow not found', 404);
+    }
+
+    workflow.attachment = {
+      hasFile: true,
+      data: req.file.buffer,
+      contentType: req.file.mimetype,
+      filename: req.file.originalname,
+      size: req.file.size
+    };
+
+    await workflow.save();
+
+    logger.info('Workflow attachment uploaded', { workflowId: workflow._id, appId, filename: req.file.originalname });
+    res.status(200).json({
+      status: 'success',
+      message: 'Attachment uploaded successfully',
+      data: {
+        attachment: {
+          hasFile: true,
+          filename: req.file.originalname,
+          contentType: req.file.mimetype,
+          size: req.file.size
+        }
+      }
+    });
+  } catch (err) {
+    if (err.name === 'CastError') return next(new AppError('Invalid workflow ID format', 400));
+    next(err);
+  }
+});
+
+// Download file attachment for a workflow question (public – URL embedded in chat)
+router.get('/apps/:appId/:id/attachment', async (req, res, next) => {
+  try {
+    const { appId, id } = req.params;
+    const workflow = await ChatbotWorkflow.findOne({ _id: id, owner: appId, 'attachment.hasFile': true }).exec();
+    if (!workflow || !workflow.attachment?.data) {
+      throw new AppError('Attachment not found', 404);
+    }
+
+    const { data, contentType, filename } = workflow.attachment;
+    res.set('Content-Type', contentType || 'application/octet-stream');
+    res.set('Content-Disposition', `attachment; filename="${filename || 'download'}"`);
+    res.set('Cache-Control', 'public, max-age=86400');
+    res.send(data);
+  } catch (err) {
+    if (err.name === 'CastError') return next(new AppError('Invalid workflow ID format', 400));
+    next(err);
+  }
+});
+
+// Delete file attachment for a workflow question (admin only)
+router.delete('/apps/:appId/:id/attachment', authenticateToken, verifyAppOwnership, async (req, res, next) => {
+  try {
+    const appId = req.appId;
+    const workflow = await ChatbotWorkflow.findOne({ _id: req.params.id, owner: appId }).exec();
+    if (!workflow) {
+      throw new AppError('Workflow not found', 404);
+    }
+
+    workflow.attachment = { hasFile: false, data: null, contentType: null, filename: null, size: null };
+    await workflow.save();
+
+    logger.info('Workflow attachment deleted', { workflowId: workflow._id, appId });
+    res.status(200).json({ status: 'success', message: 'Attachment removed successfully' });
+  } catch (err) {
+    if (err.name === 'CastError') return next(new AppError('Invalid workflow ID format', 400));
     next(err);
   }
 });

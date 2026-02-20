@@ -25,6 +25,7 @@ const availabilityRoutes = require('./routes/availability');
 const integrationRoutes = require('./routes/integration');
 const otpRoutes = require('./routes/otp');
 const chatbotWorkflowRoutes = require('./routes/chatbotWorkflow');
+const chatUploadRoutes = require('./routes/chatUpload');
 const subscriptionRoutes = require('./routes/subscriptions');
 
 class Application {
@@ -82,6 +83,7 @@ class Application {
     this.app.use(`${basePath}/integration`, securityMiddleware.getRateLimiters().api, integrationRoutes);
     this.app.use(`${basePath}/otp`, securityMiddleware.getRateLimiters().api, otpRoutes);
     this.app.use(`${basePath}/chatbot-workflows`, securityMiddleware.getRateLimiters().api, chatbotWorkflowRoutes);
+    this.app.use(`${basePath}/chat-uploads`, securityMiddleware.getRateLimiters().api, chatUploadRoutes);
     // Note: webhook route is registered in initializeMiddleware() before JSON parsing
     this.app.use(`${basePath}/subscriptions`, subscriptionRoutes);
 

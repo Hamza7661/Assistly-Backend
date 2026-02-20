@@ -171,7 +171,7 @@ class UserController {
 
       const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
       const workflowPromise = ChatbotWorkflow.find({ owner: id })
-        .select('title question questionTypeId isRoot order workflowGroupId isActive')
+        .select('title question questionTypeId options attachment.hasFile attachment.filename attachment.contentType isRoot order workflowGroupId isActive')
         .sort({ order: 1, createdAt: 1 })
         .exec();
 
@@ -219,6 +219,12 @@ class UserController {
           title: w.title,
           question: w.question,
           questionTypeId: w.questionTypeId,
+          options: w.options || [],
+          attachment: w.attachment ? {
+            hasFile: !!w.attachment.hasFile,
+            filename: w.attachment.filename || null,
+            contentType: w.attachment.contentType || null
+          } : { hasFile: false },
           isRoot: w.isRoot,
           order: w.order,
           workflowGroupId: w.workflowGroupId,
@@ -248,6 +254,12 @@ class UserController {
                 title: rootWorkflow.title,
                 question: rootWorkflow.question,
                 questionTypeId: rootWorkflow.questionTypeId,
+                options: rootWorkflow.options || [],
+                attachment: rootWorkflow.attachment ? {
+                  hasFile: !!rootWorkflow.attachment.hasFile,
+                  filename: rootWorkflow.attachment.filename || null,
+                  contentType: rootWorkflow.attachment.contentType || null
+                } : { hasFile: false },
                 isRoot: rootWorkflow.isRoot,
                 order: rootWorkflow.order,
                 workflowGroupId: rootWorkflow.workflowGroupId,
@@ -429,7 +441,7 @@ class UserController {
 
       const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
       const workflowPromise = ChatbotWorkflow.find({ owner: appId })
-        .select('title question questionTypeId isRoot order workflowGroupId isActive')
+        .select('title question questionTypeId options attachment.hasFile attachment.filename attachment.contentType isRoot order workflowGroupId isActive')
         .sort({ order: 1, createdAt: 1 })
         .exec();
 
@@ -471,6 +483,12 @@ class UserController {
           title: w.title,
           question: w.question,
           questionTypeId: w.questionTypeId,
+          options: w.options || [],
+          attachment: w.attachment ? {
+            hasFile: !!w.attachment.hasFile,
+            filename: w.attachment.filename || null,
+            contentType: w.attachment.contentType || null
+          } : { hasFile: false },
           isRoot: w.isRoot,
           order: w.order,
           workflowGroupId: w.workflowGroupId,
@@ -494,6 +512,12 @@ class UserController {
                 title: rootWorkflow.title,
                 question: rootWorkflow.question,
                 questionTypeId: rootWorkflow.questionTypeId,
+                options: rootWorkflow.options || [],
+                attachment: rootWorkflow.attachment ? {
+                  hasFile: !!rootWorkflow.attachment.hasFile,
+                  filename: rootWorkflow.attachment.filename || null,
+                  contentType: rootWorkflow.attachment.contentType || null
+                } : { hasFile: false },
                 isRoot: rootWorkflow.isRoot,
                 order: rootWorkflow.order,
                 workflowGroupId: rootWorkflow.workflowGroupId,
@@ -674,7 +698,7 @@ class UserController {
 
       const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
       const workflowPromise = ChatbotWorkflow.find({ owner: appId })
-        .select('title question questionTypeId isRoot order workflowGroupId isActive')
+        .select('title question questionTypeId options attachment.hasFile attachment.filename attachment.contentType isRoot order workflowGroupId isActive')
         .sort({ order: 1, createdAt: 1 })
         .exec();
 
@@ -718,6 +742,12 @@ class UserController {
           title: w.title,
           question: w.question,
           questionTypeId: w.questionTypeId,
+          options: w.options || [],
+          attachment: w.attachment ? {
+            hasFile: !!w.attachment.hasFile,
+            filename: w.attachment.filename || null,
+            contentType: w.attachment.contentType || null
+          } : { hasFile: false },
           isRoot: w.isRoot,
           order: w.order,
           workflowGroupId: w.workflowGroupId,
@@ -747,6 +777,12 @@ class UserController {
                 title: rootWorkflow.title,
                 question: rootWorkflow.question,
                 questionTypeId: rootWorkflow.questionTypeId,
+                options: rootWorkflow.options || [],
+                attachment: rootWorkflow.attachment ? {
+                  hasFile: !!rootWorkflow.attachment.hasFile,
+                  filename: rootWorkflow.attachment.filename || null,
+                  contentType: rootWorkflow.attachment.contentType || null
+                } : { hasFile: false },
                 isRoot: rootWorkflow.isRoot,
                 order: rootWorkflow.order,
                 workflowGroupId: rootWorkflow.workflowGroupId,
