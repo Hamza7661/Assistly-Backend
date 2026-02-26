@@ -47,10 +47,14 @@ const INDUSTRY_LEAD_TYPES = {
     { id: 4, value: 'emergency-repair', text: 'I need emergency repair services' }
   ],
   BEAUTY: [
-    { id: 1, value: 'appointment-booking', text: 'I would like to book an appointment' },
-    { id: 2, value: 'service-inquiry', text: 'I want to know about your services' },
-    { id: 3, value: 'package-information', text: 'I\'m interested in service packages' },
-    { id: 4, value: 'gift-voucher', text: 'I want to purchase a gift voucher' }
+    { id: 1, value: 'book-treatment', text: 'Book a treatment', linkedWorkflow: 'Book Treatment Workflow', linkedService: 'Book Treatment' },
+    { id: 2, value: 'hydro-facial', text: 'Hydro / Hydra Facial', linkedWorkflow: 'Hydro Facial Workflow', linkedService: 'Hydro Facials' },
+    { id: 3, value: 'custom-facial', text: 'Custom / Luxe facial', linkedWorkflow: 'Custom Facial Workflow', linkedService: 'Custom Facial' },
+    { id: 4, value: 'microneedling', text: 'Microneedling', linkedWorkflow: 'Microneedling Workflow', linkedService: 'Microneedling' },
+    { id: 5, value: 'skin-peels', text: 'Skin / Chemical Peels', linkedWorkflow: 'Skin Peels Workflow', linkedService: 'Skin Peels' },
+    { id: 6, value: 'enzyme-facial', text: 'Enzyme facial', linkedWorkflow: 'Enzyme Facial Workflow', linkedService: 'Enzyme Facial' },
+    { id: 7, value: 'dermaplane-glow', text: 'Dermaplane & Glow', linkedWorkflow: 'Dermaplane & Glow Workflow', linkedService: 'Dermaplane & Glow' },
+    { id: 8, value: 'pricing-info', text: 'Pricing & general info', linkedWorkflow: 'Info & Contact Workflow', linkedService: 'Info & Contact' }
   ],
   FITNESS: [
     { id: 1, value: 'membership-inquiry', text: 'I\'m interested in a membership' },
@@ -647,64 +651,152 @@ const seedDataTemplates = {
   [INDUSTRIES.BEAUTY]: {
     workflows: [
       {
-        title: 'Welcome',
-        question: 'Hello! Welcome to our beauty salon. How can I help you look and feel your best today?',
+        title: 'Book Treatment Workflow',
+        question: 'When would you like to book? Please share your preferred date and time, and which treatment you\'re interested in. We\'ll confirm your appointment and send you the details.',
         questionTypeId: 1,
         isRoot: true,
         order: 0,
         children: [
-          {
-            title: 'Appointment Booking',
-            question: 'Would you like to book an appointment?',
-            questionTypeId: 1,
-            isRoot: false,
-            order: 1
-          },
-          {
-            title: 'Services',
-            question: 'What beauty service are you interested in?',
-            questionTypeId: 1,
-            isRoot: false,
-            order: 2
-          },
-          {
-            title: 'Pricing',
-            question: 'Would you like to know about our pricing?',
-            questionTypeId: 1,
-            isRoot: false,
-            order: 3
-          }
+          { title: 'Book Treatment Workflow', question: 'When would you like to book? Please share your preferred date and time, and which treatment you\'re interested in. We\'ll confirm your appointment and send you the details.', questionTypeId: 1, isRoot: false, order: 0 }
+        ]
+      },
+      {
+        title: 'Hydro Facial Workflow',
+        question: 'Our hydro facials deeply cleanse, exfoliate, and hydrate for instant glow and clarity. We have different options to suit your skin. Which would you like to know more about or book?',
+        questionTypeId: 1,
+        isRoot: true,
+        order: 1,
+        children: [
+          { title: 'Hydro Facial Workflow', question: 'Our hydro facials deeply cleanse, exfoliate, and hydrate for instant glow and clarity. We have different options to suit your skin. Which would you like to know more about or book?', questionTypeId: 1, isRoot: false, order: 0 }
+        ]
+      },
+      {
+        title: 'Custom Facial Workflow',
+        question: 'Our custom facial is a tailored fusion of targeted treatments to meet your skin\'s exact needs. Would you like to book a consultation or learn more about what we can tailor for you?',
+        questionTypeId: 1,
+        isRoot: true,
+        order: 2,
+        children: [
+          { title: 'Custom Facial Workflow', question: 'Our custom facial is a tailored fusion of targeted treatments to meet your skin\'s exact needs. Would you like to book a consultation or learn more about what we can tailor for you?', questionTypeId: 1, isRoot: false, order: 0 }
+        ]
+      },
+      {
+        title: 'Microneedling Workflow',
+        question: 'Microneedling stimulates collagen and reduces the appearance of acne scars, fine lines, pigmentation and texture. Would you like to book a session or ask about suitability and aftercare?',
+        questionTypeId: 1,
+        isRoot: true,
+        order: 3,
+        children: [
+          { title: 'Microneedling Workflow', question: 'Microneedling stimulates collagen and reduces the appearance of acne scars, fine lines, pigmentation and texture. Would you like to book a session or ask about suitability and aftercare?', questionTypeId: 1, isRoot: false, order: 0 }
+        ]
+      },
+      {
+        title: 'Skin Peels Workflow',
+        question: 'Our skin peels reveal smoother, more even skin by targeting pigmentation, dullness, and congestion. Would you like to know which peel is right for you or book a treatment?',
+        questionTypeId: 1,
+        isRoot: true,
+        order: 4,
+        children: [
+          { title: 'Skin Peels Workflow', question: 'Our skin peels reveal smoother, more even skin by targeting pigmentation, dullness, and congestion. Would you like to know which peel is right for you or book a treatment?', questionTypeId: 1, isRoot: false, order: 0 }
+        ]
+      },
+      {
+        title: 'Enzyme Facial Workflow',
+        question: 'Our enzyme facial gently resurfaces and refreshes the skin, removes dead cells, reduces congestion, and restores a healthy glow. Would you like to book or ask any questions?',
+        questionTypeId: 1,
+        isRoot: true,
+        order: 5,
+        children: [
+          { title: 'Enzyme Facial Workflow', question: 'Our enzyme facial gently resurfaces and refreshes the skin, removes dead cells, reduces congestion, and restores a healthy glow. Would you like to book or ask any questions?', questionTypeId: 1, isRoot: false, order: 0 }
+        ]
+      },
+      {
+        title: 'Dermaplane & Glow Workflow',
+        question: 'Dermaplane & Glow combines gentle exfoliation, peach fuzz removal, and LED therapy for instantly smoother, brighter, radiant skin. Perfect for all skin types with no downtime. Would you like to book or know more?',
+        questionTypeId: 1,
+        isRoot: true,
+        order: 6,
+        children: [
+          { title: 'Dermaplane & Glow Workflow', question: 'Dermaplane & Glow combines gentle exfoliation, peach fuzz removal, and LED therapy for instantly smoother, brighter, radiant skin. Perfect for all skin types with no downtime. Would you like to book or know more?', questionTypeId: 1, isRoot: false, order: 0 }
+        ]
+      },
+      {
+        title: 'Info & Contact Workflow',
+        question: 'What would you like to know? You can ask about our location, opening hours, pricing, treatment suitability (e.g. pregnancy), or how to get in touch.',
+        questionTypeId: 1,
+        isRoot: true,
+        order: 7,
+        children: [
+          { title: 'Info & Contact Workflow', question: 'What would you like to know? You can ask about our location, opening hours, pricing, treatment suitability (e.g. pregnancy), or how to get in touch.', questionTypeId: 1, isRoot: false, order: 0 }
         ]
       }
     ],
     faqs: [
       {
-        question: 'What services do you offer?',
-        answer: 'We offer a wide range of beauty services including haircuts, styling, coloring, facials, manicures, pedicures, and spa treatments.'
+        question: 'What treatments do you offer?',
+        answer: 'We offer hydro facials, custom facials, microneedling, skin peels, enzyme facials, and dermaplane & glow. All are results-driven, non-invasive skin treatments tailored to your needs.'
       },
       {
         question: 'How far in advance should I book?',
-        answer: 'We recommend booking at least 1-2 weeks in advance, especially for popular services and weekend appointments.'
+        answer: 'We recommend booking at least 1–2 weeks in advance for popular treatments and weekend appointments. You can book via our website or by contacting us.'
       },
       {
-        question: 'Do you use organic or natural products?',
-        answer: 'Yes, we offer both traditional and organic/natural product options. Please let us know your preference when booking.'
+        question: 'Are treatments suitable during pregnancy or breastfeeding?',
+        answer: 'Some treatments may not be suitable during pregnancy or breastfeeding. Please contact us for advice—we can recommend the best options and when it\'s safe to enjoy our full range.'
+      },
+      {
+        question: 'Where are you located?',
+        answer: 'Please contact us for our address and opening hours. We\'d be happy to share directions and answer any questions.'
+      },
+      {
+        question: 'Do you offer consultations?',
+        answer: 'Yes. We offer personalised consultations and can tailor treatments to your skin type and goals. Book your consultation to start your journey to radiant skin.'
       }
     ],
     leadTypes: INDUSTRY_LEAD_TYPES.BEAUTY,
     servicePlans: [
       {
-        name: 'Haircut & Style',
-        description: 'Professional haircut and styling',
-        price: { amount: 60, currency: 'USD' }
+        name: 'Book Treatment',
+        description: 'Book a treatment or consultation at your preferred date and time.',
+        price: { amount: 0, currency: 'GBP' }
       },
       {
-        name: 'Full Service Package',
-        description: 'Haircut, color, and styling',
-        price: { amount: 150, currency: 'USD' }
+        name: 'Hydro Facials',
+        description: 'Deeply cleanse, exfoliate, and hydrate for instant glow and clarity.',
+        price: { amount: 0, currency: 'GBP' }
+      },
+      {
+        name: 'Custom Facial',
+        description: 'A customised fusion of targeted treatments to meet your skin\'s exact needs.',
+        price: { amount: 0, currency: 'GBP' }
+      },
+      {
+        name: 'Microneedling',
+        description: 'Stimulate collagen and reduce the appearance of acne scars, fine lines, pigmentation and texture.',
+        price: { amount: 0, currency: 'GBP' }
+      },
+      {
+        name: 'Skin Peels',
+        description: 'Reveal smoother, more even skin by targeting pigmentation, dullness, and congestion.',
+        price: { amount: 0, currency: 'GBP' }
+      },
+      {
+        name: 'Enzyme Facial',
+        description: 'Gently resurfaces and refreshes the skin, removes dead cells, reduces congestion, and restores a healthy glow.',
+        price: { amount: 0, currency: 'GBP' }
+      },
+      {
+        name: 'Dermaplane & Glow',
+        description: 'Gentle exfoliation, peach fuzz removal, and LED therapy for instantly smoother, brighter, radiant skin. No downtime.',
+        price: { amount: 0, currency: 'GBP' }
+      },
+      {
+        name: 'Info & Contact',
+        description: 'General information, location, opening hours, pricing, and contact details.',
+        price: { amount: 0, currency: 'GBP' }
       }
     ],
-    introduction: 'Hello beautiful! 👋 This is {assistantName} from {companyName}. We\'re here to help you look and feel absolutely amazing! What service are you interested in today?'
+    introduction: 'Hi! 👋 This is {assistantName} from {companyName}. We specialise in results-driven skin treatments tailored to your glow. How can we help you today?'
   },
   [INDUSTRIES.FITNESS]: {
     workflows: [
