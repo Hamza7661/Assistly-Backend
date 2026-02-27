@@ -14,6 +14,20 @@ const { Questionnaire, QUESTIONNAIRE_TYPES } = require('../models/Questionnaire'
 const { QuestionType } = require('../models/QuestionType');
 const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
 
+const FACEBOOK_GRAPH_BASE_URL = process.env.FACEBOOK_GRAPH_BASE_URL;
+
+function getDefaultIntegrationConfig() {
+  return {
+    assistantName: process.env.DEFAULT_ASSISTANT_NAME || 'Assistant',
+    companyName: '',
+    greeting: process.env.DEFAULT_GREETING || 'Hi this is {assistantName} your virtual ai assistant from {companyName}. How can I help you today?',
+    validateEmail: true,
+    validatePhoneNumber: true,
+    googleReviewEnabled: false,
+    googleReviewUrl: null
+  };
+}
+
 // Slug from label so value matches displayed text (e.g. "Catering" -> "catering")
 function slugifyLeadValue(text) {
   if (!text || typeof text !== 'string') return '';
@@ -48,6 +62,91 @@ function getLeadTypesFromIntegration(integration) {
 }
 
 class AppController {
+  /**
+   * Exchange a short-lived Facebook user access token for a long-lived one,
+   * then fetch the Page access token for the given pageId.
+   * Returns only long-lived tokens + page info (no short-lived token stored).
+   */
+  static async exchangeAndGetPageToken(shortLivedToken, pageId) {
+    const fbAppId = process.env.FACEBOOK_APP_ID;
+    const fbAppSecret = process.env.FACEBOOK_APP_SECRET;
+    const apiVersion = process.env.FACEBOOK_API_VERSION || 'v22.0';
+
+    if (!fbAppId || !fbAppSecret) {
+      throw new AppError('FACEBOOK_APP_ID and FACEBOOK_APP_SECRET must be configured on the server', 500);
+    }
+
+    // 1) Exchange short-lived user token -> long-lived (~60 days)
+    const exchangeRes = await fetch(
+      `${FACEBOOK_GRAPH_BASE_URL}/${apiVersion}/oauth/access_token` +
+      `?grant_type=fb_exchange_token` +
+      `&client_id=${encodeURIComponent(fbAppId)}` +
+      `&client_secret=${encodeURIComponent(fbAppSecret)}` +
+      `&fb_exchange_token=${encodeURIComponent(shortLivedToken)}`
+    );
+    const exchangeData = await exchangeRes.json();
+    if (exchangeData.error) {
+      throw new AppError(`Facebook token exchange failed: ${exchangeData.error.message}`, 400);
+    }
+
+    const longLivedToken = exchangeData.access_token;
+    const expiresIn = exchangeData.expires_in || 60 * 24 * 60 * 60; // default ~60 days
+    const tokenExpiry = new Date(Date.now() + expiresIn * 1000);
+
+    // 2) Use long-lived user token to fetch managed pages and get page access token
+    const accountsRes = await fetch(
+      `${FACEBOOK_GRAPH_BASE_URL}/${apiVersion}/me/accounts` +
+      `?fields=id,name,access_token` +
+      `&access_token=${encodeURIComponent(longLivedToken)}`
+    );
+    const accountsData = await accountsRes.json();
+    if (accountsData.error) {
+      throw new AppError(`Failed to retrieve Facebook pages: ${accountsData.error.message}`, 400);
+    }
+
+    const page = (accountsData.data || []).find(p => p.id === String(pageId));
+    if (!page) {
+      throw new AppError('Selected Facebook page not found in your managed pages list', 400);
+    }
+
+    return {
+      longLivedToken,
+      pageAccessToken: page.access_token,
+      pageName: page.name,
+      tokenExpiry
+    };
+  }
+
+  /**
+   * Subscribe a Facebook Page to this app's webhook in Meta.
+   * This assumes the app-level webhook URL + verify token are already configured
+   * in the Meta App Dashboard; here we only associate the Page with the app.
+   */
+  static async subscribePageWebhook(pageId, pageAccessToken) {
+    const apiVersion = process.env.FACEBOOK_API_VERSION || 'v22.0';
+    const subscribedFields =
+      process.env.FACEBOOK_SUBSCRIBED_FIELDS || 'messages,messaging_postbacks';
+
+    if (!pageId || !pageAccessToken) {
+      throw new AppError('Page ID and Page Access Token are required to subscribe webhook', 400);
+    }
+
+    const url =
+      `https://graph.facebook.com/${apiVersion}/${encodeURIComponent(pageId)}/subscribed_apps` +
+      `?subscribed_fields=${encodeURIComponent(subscribedFields)}` +
+      `&access_token=${encodeURIComponent(pageAccessToken)}`;
+
+    const res = await fetch(url, { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok || data.error) {
+      const msg = data?.error?.message || res.statusText || 'Unknown error';
+      throw new AppError(`Failed to subscribe Facebook page to webhook: ${msg}`, 400);
+    }
+
+    return data;
+  }
+
   // Helper to verify app ownership
   static async verifyAppOwnership(appId, userId) {
     // Don't allow access to deleted apps (handle both null and non-existent deletedAt)
@@ -80,7 +179,16 @@ class AppController {
         throw new AppError(`Validation failed: ${errorMessages.join(', ')}`, 400);
       }
 
-      const { name, industry, description, whatsappOption, whatsappNumber } = value;
+      const {
+        name,
+        industry,
+        description,
+        whatsappOption,
+        whatsappNumber,
+        facebookShortLivedToken,
+        facebookPageId,
+        facebookPageName
+      } = value;
 
       // Check if app name already exists for this user (only check active apps, exclude deleted)
       const existingApp = await App.findOne({ 
@@ -120,6 +228,51 @@ class AppController {
 
       const app = new App(appData);
       await app.save();
+
+      // If Facebook OAuth data was provided at creation time, exchange & store long-lived tokens.
+      if (facebookShortLivedToken && facebookPageId) {
+        try {
+          const fbData = await AppController.exchangeAndGetPageToken(facebookShortLivedToken, facebookPageId);
+          app.facebookPageId = String(facebookPageId).trim();
+          app.facebookPageName = fbData.pageName || facebookPageName || null;
+          app.facebookLongLivedToken = fbData.longLivedToken;
+          app.facebookPageAccessToken = fbData.pageAccessToken;
+          app.facebookTokenExpiry = fbData.tokenExpiry;
+          await app.save();
+
+          logger.info('Facebook page connected during app creation', {
+            appId: app._id,
+            facebookPageId: app.facebookPageId,
+            facebookPageName: app.facebookPageName
+          });
+
+          // Best-effort: subscribe the page to the Meta webhook configured for this app.
+          try {
+            const subscriptionResult = await AppController.subscribePageWebhook(
+              app.facebookPageId,
+              app.facebookPageAccessToken
+            );
+            logger.info('Facebook page subscribed to webhook during app creation', {
+              appId: app._id,
+              facebookPageId: app.facebookPageId,
+              result: subscriptionResult
+            });
+          } catch (subErr) {
+            // Non-fatal: app is created and tokens are stored; user can re-try subscription later.
+            logger.warn('Facebook page webhook subscription failed during app creation', {
+              appId: app._id,
+              facebookPageId: app.facebookPageId,
+              error: subErr.message
+            });
+          }
+        } catch (fbError) {
+          // Non-fatal: app creation still succeeds; user can connect later from Edit App.
+          logger.warn('Facebook connection failed during app creation', {
+            appId: app._id,
+            error: fbError.message
+          });
+        }
+      }
 
       // If this app has a number and is the only one with this number for this owner, it should use the Twilio number
       const num = app.whatsappNumber?.trim?.();
@@ -162,6 +315,9 @@ class AppController {
             whatsappNumber: app.whatsappNumber,
             whatsappNumberSource: app.whatsappNumberSource,
             whatsappNumberStatus: app.whatsappNumberStatus,
+            facebookPageId: app.facebookPageId,
+            facebookPageName: app.facebookPageName,
+            facebookTokenExpiry: app.facebookTokenExpiry,
             usesTwilioNumber: !!app.usesTwilioNumber,
             isActive: app.isActive,
             createdAt: app.createdAt,
@@ -245,6 +401,8 @@ class AppController {
             twilioWhatsAppSenderId: app.twilioWhatsAppSenderId,
             usesTwilioNumber: !!app.usesTwilioNumber,
             facebookPageId: app.facebookPageId,
+            facebookPageName: app.facebookPageName,
+            facebookTokenExpiry: app.facebookTokenExpiry,
             instagramBusinessAccountId: app.instagramBusinessAccountId,
             instagramUsername: app.instagramUsername,
             isActive: app.isActive,
@@ -326,6 +484,8 @@ class AppController {
             twilioWhatsAppSenderId: app.twilioWhatsAppSenderId,
             usesTwilioNumber: !!app.usesTwilioNumber,
             facebookPageId: app.facebookPageId,
+            facebookPageName: app.facebookPageName,
+            facebookTokenExpiry: app.facebookTokenExpiry,
             instagramBusinessAccountId: app.instagramBusinessAccountId,
             instagramUsername: app.instagramUsername,
             isActive: app.isActive,
@@ -692,15 +852,7 @@ class AppController {
         validatePhoneNumber: integration.validatePhoneNumber,
         googleReviewEnabled: !!integration.googleReviewEnabled,
         googleReviewUrl: integration.googleReviewUrl || null
-      } : {
-        assistantName: 'Assistant',
-        companyName: '',
-        greeting: process.env.DEFAULT_GREETING || 'Hi this is {assistantName} your virtual ai assistant from {companyName}. How can I help you today?',
-        validateEmail: true,
-        validatePhoneNumber: true,
-        googleReviewEnabled: false,
-        googleReviewUrl: null
-      };
+      } : getDefaultIntegrationConfig();
 
       const responseData = {
         status: 'success',
@@ -754,7 +906,7 @@ class AppController {
       }
       const app = await App.findBySocialSenderId(socialSenderId)
         .populate('owner', 'firstName lastName professionDescription website')
-        .select('_id name industry owner instagramBusinessAccountId instagramAccessToken')
+        .select('_id name industry owner facebookPageId facebookPageName instagramBusinessAccountId +facebookPageAccessToken +instagramAccessToken')
         .exec();
       if (!app || !app.owner) {
         return next(new AppError('No app found with this sender ID', 404));
@@ -906,15 +1058,7 @@ class AppController {
         validatePhoneNumber: integration.validatePhoneNumber,
         googleReviewEnabled: !!integration.googleReviewEnabled,
         googleReviewUrl: integration.googleReviewUrl || null
-      } : {
-        assistantName: 'Assistant',
-        companyName: '',
-        greeting: process.env.DEFAULT_GREETING || 'Hi this is {assistantName} your virtual ai assistant from {companyName}. How can I help you today?',
-        validateEmail: true,
-        validatePhoneNumber: true,
-        googleReviewEnabled: false,
-        googleReviewUrl: null
-      };
+      } : getDefaultIntegrationConfig();
       const responseData = {
         status: 'success',
         data: {
@@ -932,7 +1076,9 @@ class AppController {
           integration: integrationData,
           workflows: rootWorkflows,
           country: process.env.COUNTRY,
-          // Include Instagram credentials if this is an Instagram Business Account
+          // Include Messenger credentials when this lookup is by Facebook Page ID
+          messengerAccessToken: app.facebookPageAccessToken || null,
+          // Include Instagram credentials when this lookup is by Instagram Business Account ID
           instagramBusinessAccountId: app.instagramBusinessAccountId || null,
           instagramAccessToken: app.instagramAccessToken || null
         }
@@ -1025,6 +1171,123 @@ class AppController {
       next(error);
     }
   }
+
+  /**
+   * Connect a Facebook Page to an existing app.
+   * Exchanges the short-lived token for long-lived + page access token and stores only those.
+   */
+  async connectFacebook(req, res, next) {
+    try {
+      const userId = req.user.id;
+      const { id } = req.params;
+      const { shortLivedToken, pageId, pageName } = req.body || {};
+
+      if (!shortLivedToken || !pageId) {
+        throw new AppError('shortLivedToken and pageId are required', 400);
+      }
+
+      const app = await AppController.verifyAppOwnership(id, userId);
+
+      const fbData = await AppController.exchangeAndGetPageToken(shortLivedToken, pageId);
+
+      app.facebookPageId = String(pageId).trim();
+      app.facebookPageName = fbData.pageName || pageName || null;
+      app.facebookLongLivedToken = fbData.longLivedToken;
+      app.facebookPageAccessToken = fbData.pageAccessToken;
+      app.facebookTokenExpiry = fbData.tokenExpiry;
+      await app.save();
+
+      // Invalidate any cached app context so new tokens are picked up where relevant
+      try {
+        const key = cacheManager.getAppContextKey(app._id);
+        await cacheManager.del(key);
+      } catch (e) {
+        logger.warn('Failed to invalidate app context cache after Facebook connect', {
+          appId: app._id,
+          error: e?.message
+        });
+      }
+
+      logger.info('Facebook page connected to app', {
+        appId: app._id,
+        facebookPageId: app.facebookPageId,
+        facebookPageName: app.facebookPageName
+      });
+
+      // Best-effort: subscribe the page to the Meta webhook configured for this app.
+      try {
+        const subscriptionResult = await AppController.subscribePageWebhook(
+          app.facebookPageId,
+          app.facebookPageAccessToken
+        );
+        logger.info('Facebook page subscribed to webhook', {
+          appId: app._id,
+          facebookPageId: app.facebookPageId,
+          result: subscriptionResult
+        });
+      } catch (subErr) {
+        // Do not fail the whole connection if subscription fails; just log.
+        logger.warn('Facebook page webhook subscription failed', {
+          appId: app._id,
+          facebookPageId: app.facebookPageId,
+          error: subErr.message
+        });
+      }
+
+      res.status(200).json({
+        status: 'success',
+        message: 'Facebook page connected successfully',
+        data: {
+          app: {
+            id: app._id,
+            facebookPageId: app.facebookPageId,
+            facebookPageName: app.facebookPageName,
+            facebookTokenExpiry: app.facebookTokenExpiry
+          }
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Disconnect any Facebook Page from this app and wipe stored tokens.
+   */
+  async disconnectFacebook(req, res, next) {
+    try {
+      const userId = req.user.id;
+      const { id } = req.params;
+
+      const app = await AppController.verifyAppOwnership(id, userId);
+
+      app.facebookPageId = null;
+      app.facebookPageName = null;
+      app.facebookLongLivedToken = null;
+      app.facebookPageAccessToken = null;
+      app.facebookTokenExpiry = null;
+      await app.save();
+
+      try {
+        const key = cacheManager.getAppContextKey(app._id);
+        await cacheManager.del(key);
+      } catch (e) {
+        logger.warn('Failed to invalidate app context cache after Facebook disconnect', {
+          appId: app._id,
+          error: e?.message
+        });
+      }
+
+      logger.info('Facebook page disconnected from app', { appId: app._id });
+
+      res.status(200).json({
+        status: 'success',
+        message: 'Facebook page disconnected successfully'
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 const appController = new AppController();
@@ -1034,11 +1297,14 @@ router.post('/', authenticateToken, appController.createApp);
 router.get('/', authenticateToken, appController.getApps);
 router.get('/by-twilio/:twilioPhoneNumber/context', verifySignedThirdPartyForParamUser, appController.getAppContextByTwilioNumber);
 router.get('/by-social-sender/:socialSenderId/context', verifySignedThirdPartyForParamUser, appController.getAppContextBySocialSender);
-router.get('/:id', authenticateToken, appController.getApp);
-router.put('/:id', authenticateToken, appController.updateApp);
-router.delete('/:id', authenticateToken, appController.deleteApp);
+// More specific routes must come before generic :id routes
+router.post('/:id/facebook/connect', authenticateToken, appController.connectFacebook.bind(appController));
+router.post('/:id/facebook/disconnect', authenticateToken, appController.disconnectFacebook.bind(appController));
 router.post('/:id/restore', authenticateToken, appController.restoreApp);
 router.post('/:id/whatsapp/register', authenticateToken, appController.registerWhatsApp);
 router.post('/:id/set-uses-twilio', authenticateToken, appController.setUsesTwilioNumber);
+router.get('/:id', authenticateToken, appController.getApp);
+router.put('/:id', authenticateToken, appController.updateApp);
+router.delete('/:id', authenticateToken, appController.deleteApp);
 
 module.exports = router;
