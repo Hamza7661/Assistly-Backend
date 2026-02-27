@@ -88,6 +88,31 @@ const appSchema = new mongoose.Schema({
     sparse: true,
     index: true
   },
+  /** Display name of the connected Facebook Page. */
+  facebookPageName: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  /** Long-lived Facebook User Access Token (~60 days). Never returned in queries by default. */
+  facebookLongLivedToken: {
+    type: String,
+    trim: true,
+    default: null,
+    select: false
+  },
+  /** Facebook Page Access Token for sending messages via Graph API. Never returned in queries by default. */
+  facebookPageAccessToken: {
+    type: String,
+    trim: true,
+    default: null,
+    select: false
+  },
+  /** Expiry timestamp for the long-lived user access token. */
+  facebookTokenExpiry: {
+    type: Date,
+    default: null
+  },
   /** Instagram Business Account ID from Meta (used for context lookup when Instagram DMs arrive via Meta Graph API). */
   instagramBusinessAccountId: {
     type: String,
@@ -261,7 +286,23 @@ const appValidationSchema = Joi.object({
     .allow(null, '')
     .messages({
       'string.pattern.base': 'Twilio phone number must be in E.164 format (e.g., +1234567890)'
-    })
+    }),
+  
+  // Optional Facebook fields used during initial app creation.
+  facebookShortLivedToken: Joi.string()
+    .trim()
+    .allow(null, '')
+    .optional(),
+  
+  facebookPageId: Joi.string()
+    .trim()
+    .allow(null, '')
+    .optional(),
+  
+  facebookPageName: Joi.string()
+    .trim()
+    .allow(null, '')
+    .optional()
 });
 
 const appUpdateValidationSchema = Joi.object({
@@ -321,6 +362,11 @@ const appUpdateValidationSchema = Joi.object({
     .optional(),
   
   facebookPageId: Joi.string()
+    .trim()
+    .allow(null, '')
+    .optional(),
+  
+  facebookPageName: Joi.string()
     .trim()
     .allow(null, '')
     .optional(),
