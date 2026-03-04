@@ -121,9 +121,15 @@ class SecurityMiddleware {
   }
 
   getCorsConfig() {
-    const allowedOrigins = process.env.ALLOWED_ORIGINS ? 
-      process.env.ALLOWED_ORIGINS.split(',') : 
-      ['http://localhost:3000', 'http://localhost:3001'];
+    const fromEnv = process.env.ALLOWED_ORIGINS
+      ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
+      : [];
+    const defaultOrigins = ['http://localhost:3000', 'http://localhost:3001', 'https://localhost:3001'];
+    const allowedOrigins = fromEnv.length > 0 ? fromEnv : defaultOrigins;
+    // Always allow local HTTPS dev origin (Meta/Facebook Login requires HTTPS)
+    if (!allowedOrigins.includes('https://localhost:3001')) {
+      allowedOrigins.push('https://localhost:3001');
+    }
 
     const allowedMethods = process.env.ALLOWED_METHODS ? 
       process.env.ALLOWED_METHODS.split(',') : 
@@ -135,11 +141,22 @@ class SecurityMiddleware {
 
     return cors({
       origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin)) {
-          callback(null, true);
-        } else {
-          callback(new Error('Not allowed by CORS'));
+        if (!origin) {
+          return callback(null, true);
         }
+        if (allowedOrigins.includes(origin)) {
+          return callback(null, true);
+        }
+        // In development, allow any localhost origin (e.g. https://localhost:3001 for Meta Login)
+        if (process.env.NODE_ENV !== 'production') {
+          try {
+            const u = new URL(origin);
+            if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') {
+              return callback(null, true);
+            }
+          } catch (_) {}
+        }
+        callback(new Error('Not allowed by CORS'));
       },
       methods: allowedMethods,
       allowedHeaders: allowedHeaders,

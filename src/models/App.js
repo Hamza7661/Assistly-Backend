@@ -59,6 +59,12 @@ const appSchema = new mongoose.Schema({
     trim: true,
     default: null
   },
+  /** WhatsApp Business Account ID from Meta (for Senders API). Set per app when using Meta Embedded Signup. */
+  wabaId: {
+    type: String,
+    trim: true,
+    default: null
+  },
   twilioPhoneNumber: {
     type: String,
     trim: true,
@@ -194,7 +200,10 @@ const appValidationSchema = Joi.object({
     .allow(null, '')
     .messages({
       'string.pattern.base': 'Twilio phone number must be in E.164 format (e.g., +1234567890)'
-    })
+    }),
+  /** Pre-provisioned: when get-from-twilio and number was provisioned before app creation */
+  twilioWhatsAppSenderId: Joi.string().optional().allow(null, ''),
+  wabaId: Joi.string().optional().allow(null, '')
 });
 
 const appUpdateValidationSchema = Joi.object({
@@ -239,6 +248,10 @@ const appUpdateValidationSchema = Joi.object({
     .optional(),
   
   twilioWhatsAppSenderId: Joi.string()
+    .optional()
+    .allow(null, ''),
+  
+  wabaId: Joi.string()
     .optional()
     .allow(null, ''),
   
