@@ -114,6 +114,13 @@ const integrationSchema = new mongoose.Schema({
       type: Number,
       default: 0
     },
+    // Optional: emoji to display alongside the lead type text (stored as native Unicode character)
+    emoji: {
+      type: String,
+      trim: true,
+      maxlength: 10,
+      default: undefined
+    },
     // Optional: service plan names (treatment plan "question") to show for this lead type
     // If empty or missing, all service plans are shown
     relevantServicePlans: [{
@@ -179,6 +186,7 @@ const integrationValidationSchema = Joi.object({
       text: Joi.string().max(200).required(),
       isActive: Joi.boolean().optional().default(true),
       order: Joi.number().integer().optional().default(0),
+      emoji: Joi.string().trim().max(10).allow('', null).optional(),
       relevantServicePlans: Joi.array().items(Joi.string().trim()).optional(),
       synonyms: Joi.array().items(Joi.string().trim().max(100)).optional(),
       labels: Joi.object().pattern(Joi.string(), Joi.string().max(200)).optional()
@@ -209,6 +217,7 @@ const integrationUpdateValidationSchema = Joi.object({
       text: Joi.string().max(200).required(),
       isActive: Joi.boolean().optional().default(true),
       order: Joi.number().integer().optional().default(0),
+      emoji: Joi.string().trim().max(10).allow('', null).optional(),
       relevantServicePlans: Joi.array().items(Joi.string().trim()).optional(),
       synonyms: Joi.array().items(Joi.string().trim().max(100)).optional(),
       labels: Joi.object().pattern(Joi.string(), Joi.string().max(200)).optional()
