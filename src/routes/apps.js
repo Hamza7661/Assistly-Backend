@@ -851,8 +851,12 @@ class AppController {
         validateEmail: integration.validateEmail,
         validatePhoneNumber: integration.validatePhoneNumber,
         googleReviewEnabled: !!integration.googleReviewEnabled,
-        googleReviewUrl: integration.googleReviewUrl || null
-      } : getDefaultIntegrationConfig();
+        googleReviewUrl: integration.googleReviewUrl || null,
+        leadTypeMessages: integration.leadTypeMessages || []
+      } : {
+        ...getDefaultIntegrationConfig(),
+        leadTypeMessages: []
+      };
 
       const responseData = {
         status: 'success',
@@ -1057,8 +1061,12 @@ class AppController {
         validateEmail: integration.validateEmail,
         validatePhoneNumber: integration.validatePhoneNumber,
         googleReviewEnabled: !!integration.googleReviewEnabled,
-        googleReviewUrl: integration.googleReviewUrl || null
-      } : getDefaultIntegrationConfig();
+        googleReviewUrl: integration.googleReviewUrl || null,
+        leadTypeMessages: integration.leadTypeMessages || []
+      } : {
+        ...getDefaultIntegrationConfig(),
+        leadTypeMessages: []
+      };
       const responseData = {
         status: 'success',
         data: {
