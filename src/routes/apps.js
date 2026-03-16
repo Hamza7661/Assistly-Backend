@@ -24,7 +24,8 @@ function getDefaultIntegrationConfig() {
     validateEmail: true,
     validatePhoneNumber: true,
     googleReviewEnabled: false,
-    googleReviewUrl: null
+    googleReviewUrl: null,
+    calendarConnected: false
   };
 }
 
@@ -864,6 +865,8 @@ class AppController {
         validatePhoneNumber: integration.validatePhoneNumber,
         googleReviewEnabled: !!integration.googleReviewEnabled,
         googleReviewUrl: integration.googleReviewUrl || null,
+        calendarConnected: !!integration.googleCalendarConnected,
+        calendarSlotMinutes: integration.calendarSlotMinutes ?? 30,
         leadTypeMessages: integration.leadTypeMessages || []
       } : {
         ...getDefaultIntegrationConfig(),
@@ -1074,6 +1077,8 @@ class AppController {
         validatePhoneNumber: integration.validatePhoneNumber,
         googleReviewEnabled: !!integration.googleReviewEnabled,
         googleReviewUrl: integration.googleReviewUrl || null,
+        calendarConnected: !!integration.googleCalendarConnected,
+        calendarSlotMinutes: integration.calendarSlotMinutes ?? 30,
         leadTypeMessages: integration.leadTypeMessages || []
       } : {
         ...getDefaultIntegrationConfig(),
