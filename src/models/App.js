@@ -86,6 +86,61 @@ const appSchema = new mongoose.Schema({
     default: false,
     index: true
   },
+  /** Facebook Page ID for Messenger/Instagram (Twilio sender). Used for context lookup when messages arrive on this channel. */
+  facebookPageId: {
+    type: String,
+    trim: true,
+    default: null,
+    sparse: true,
+    index: true
+  },
+  /** Display name of the connected Facebook Page. */
+  facebookPageName: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  /** Long-lived Facebook User Access Token (~60 days). Never returned in queries by default. */
+  facebookLongLivedToken: {
+    type: String,
+    trim: true,
+    default: null,
+    select: false
+  },
+  /** Facebook Page Access Token for sending messages via Graph API. Never returned in queries by default. */
+  facebookPageAccessToken: {
+    type: String,
+    trim: true,
+    default: null,
+    select: false
+  },
+  /** Expiry timestamp for the long-lived user access token. */
+  facebookTokenExpiry: {
+    type: Date,
+    default: null
+  },
+  /** Instagram Business Account ID from Meta (used for context lookup when Instagram DMs arrive via Meta Graph API). */
+  instagramBusinessAccountId: {
+    type: String,
+    trim: true,
+    default: null,
+    sparse: true,
+    index: true
+  },
+  /** Instagram access token (long-lived) from Meta for sending messages via Graph API. */
+  instagramAccessToken: {
+    type: String,
+    trim: true,
+    default: null,
+    select: false // Don't return in queries by default (security)
+  },
+  /** Optional display label for the connected Instagram account (e.g. @username). */
+  instagramUsername: {
+    type: String,
+    trim: true,
+    default: null,
+    sparse: true
+  },
   isActive: {
     type: Boolean,
     default: true,
@@ -116,6 +171,8 @@ appSchema.index({ owner: 1, name: 1 }, { unique: true, partialFilterExpression: 
 appSchema.index({ whatsappNumber: 1 }, { sparse: true });
 appSchema.index({ twilioPhoneNumber: 1 }, { sparse: true });
 appSchema.index({ twilioPhoneNumber: 1, usesTwilioNumber: 1 }, { partialFilterExpression: { usesTwilioNumber: true }, sparse: true });
+appSchema.index({ facebookPageId: 1 }, { sparse: true });
+appSchema.index({ instagramSenderId: 1 }, { sparse: true });
 appSchema.index({ isActive: 1 });
 appSchema.index({ createdAt: -1 });
 
@@ -147,6 +204,41 @@ appSchema.statics.findByTwilioPhone = function(twilioPhoneNumber) {
     ]
   };
   return this.findOne(baseQuery).sort({ usesTwilioNumber: -1 }); // prefer usesTwilioNumber true
+};
+
+// Resolve app by Facebook Page ID (Messenger Twilio sender)
+appSchema.statics.findByFacebookPageId = function(facebookPageId) {
+  const normalized = facebookPageId && String(facebookPageId).trim();
+  if (!normalized) return this.findOne({ _id: null });
+  return this.findOne({
+    facebookPageId: normalized,
+    isActive: true,
+    $or: [ { deletedAt: null }, { deletedAt: { $exists: false } } ]
+  });
+};
+
+// Resolve app by Instagram Sender ID (Twilio Instagram channel)
+appSchema.statics.findByInstagramSenderId = function(instagramSenderId) {
+  const normalized = instagramSenderId && String(instagramSenderId).trim();
+  if (!normalized) return this.findOne({ _id: null });
+  return this.findOne({
+    instagramSenderId: normalized,
+    isActive: true,
+    $or: [ { deletedAt: null }, { deletedAt: { $exists: false } } ]
+  });
+};
+
+// Generic: resolve app by Messenger (Facebook Page ID) or Instagram Business Account ID — same context for both
+appSchema.statics.findBySocialSenderId = function(senderId) {
+  const normalized = senderId && String(senderId).trim();
+  if (!normalized) return this.findOne({ _id: null });
+  return this.findOne({
+    $and: [
+      { $or: [ { facebookPageId: normalized }, { instagramBusinessAccountId: normalized } ] },
+      { isActive: true },
+      { $or: [ { deletedAt: null }, { deletedAt: { $exists: false } } ] }
+    ]
+  });
 };
 
 const App = mongoose.model('App', appSchema);
@@ -201,9 +293,23 @@ const appValidationSchema = Joi.object({
     .messages({
       'string.pattern.base': 'Twilio phone number must be in E.164 format (e.g., +1234567890)'
     }),
-  /** Pre-provisioned: when get-from-twilio and number was provisioned before app creation */
-  twilioWhatsAppSenderId: Joi.string().optional().allow(null, ''),
-  wabaId: Joi.string().optional().allow(null, '')
+    twilioWhatsAppSenderId: Joi.string().optional().allow(null, ''),
+    wabaId: Joi.string().optional().allow(null, ''),
+  // Optional Facebook fields used during initial app creation.
+  facebookShortLivedToken: Joi.string()
+    .trim()
+    .allow(null, '')
+    .optional(),
+  
+  facebookPageId: Joi.string()
+    .trim()
+    .allow(null, '')
+    .optional(),
+  
+  facebookPageName: Joi.string()
+    .trim()
+    .allow(null, '')
+    .optional()
 });
 
 const appUpdateValidationSchema = Joi.object({
@@ -264,6 +370,31 @@ const appUpdateValidationSchema = Joi.object({
     }),
   
   usesTwilioNumber: Joi.boolean()
+    .optional(),
+  
+  facebookPageId: Joi.string()
+    .trim()
+    .allow(null, '')
+    .optional(),
+  
+  facebookPageName: Joi.string()
+    .trim()
+    .allow(null, '')
+    .optional(),
+  
+  instagramBusinessAccountId: Joi.string()
+    .trim()
+    .allow(null, '')
+    .optional(),
+  
+  instagramAccessToken: Joi.string()
+    .trim()
+    .allow(null, '')
+    .optional(),
+  
+  instagramUsername: Joi.string()
+    .trim()
+    .allow(null, '')
     .optional(),
   
   isActive: Joi.boolean()

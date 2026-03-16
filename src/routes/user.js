@@ -593,7 +593,8 @@ class UserController {
         validateEmail: integration.validateEmail,
         validatePhoneNumber: integration.validatePhoneNumber,
         googleReviewEnabled: !!integration.googleReviewEnabled,
-        googleReviewUrl: integration.googleReviewUrl || null
+        googleReviewUrl: integration.googleReviewUrl || null,
+        leadTypeMessages: integration.leadTypeMessages || []
       } : {
         assistantName: 'Assistant',
         companyName: '',
@@ -601,7 +602,8 @@ class UserController {
         validateEmail: true,
         validatePhoneNumber: true,
         googleReviewEnabled: false,
-        googleReviewUrl: null
+        googleReviewUrl: null,
+        leadTypeMessages: []
       };
 
       const responseData = {
@@ -862,7 +864,7 @@ class UserController {
         if (aOrder !== bOrder) {
           return aOrder - bOrder;
         }
-       
+        
         return (a.order || 0) - (b.order || 0);
       });
       
@@ -876,7 +878,8 @@ class UserController {
         validateEmail: integration.validateEmail,
         validatePhoneNumber: integration.validatePhoneNumber,
         googleReviewEnabled: !!integration.googleReviewEnabled,
-        googleReviewUrl: integration.googleReviewUrl || null
+        googleReviewUrl: integration.googleReviewUrl || null,
+        leadTypeMessages: integration.leadTypeMessages || []
       } : {
         assistantName: 'Assistant',
         companyName: '',
@@ -884,7 +887,8 @@ class UserController {
         validateEmail: true,
         validatePhoneNumber: true,
         googleReviewEnabled: false,
-        googleReviewUrl: null
+        googleReviewUrl: null,
+        leadTypeMessages: []
       };
 
       const responseData = {
