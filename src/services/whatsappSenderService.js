@@ -6,9 +6,12 @@ const { logger } = require('../utils/logger');
  * and fetch sender status. Uses v2 Channels Senders API.
  */
 class WhatsAppSenderService {
-  constructor() {
-    const accountSid = process.env.TWILIO_ACCOUNT_SID;
-    const authToken = process.env.TWILIO_AUTH_TOKEN;
+  /**
+   * @param {{ accountSid?: string, authToken?: string }} [config]
+   */
+  constructor(config = {}) {
+    const accountSid = config.accountSid || process.env.TWILIO_ACCOUNT_SID;
+    const authToken = config.authToken || process.env.TWILIO_AUTH_TOKEN;
     if (!accountSid || !authToken) {
       throw new Error('TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN are required');
     }
@@ -173,7 +176,12 @@ function getWhatsAppSenderService() {
   return instance;
 }
 
+function createWhatsAppSenderServiceForAccount(accountSid, authToken) {
+  return new WhatsAppSenderService({ accountSid, authToken });
+}
+
 module.exports = {
   WhatsAppSenderService,
-  getWhatsAppSenderService
+  getWhatsAppSenderService,
+  createWhatsAppSenderServiceForAccount
 };

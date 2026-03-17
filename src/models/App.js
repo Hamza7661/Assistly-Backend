@@ -65,6 +65,20 @@ const appSchema = new mongoose.Schema({
     trim: true,
     default: null
   },
+  /** Twilio subaccount for this app (WhatsApp + numbers isolated per customer). */
+  twilioSubaccountSid: {
+    type: String,
+    trim: true,
+    default: null,
+    index: true,
+    sparse: true
+  },
+  /** Encrypted subaccount auth token (never expose in API). */
+  twilioSubaccountAuthTokenEnc: {
+    type: String,
+    default: null,
+    select: false
+  },
   twilioPhoneNumber: {
     type: String,
     trim: true,
