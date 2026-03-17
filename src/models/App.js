@@ -59,6 +59,12 @@ const appSchema = new mongoose.Schema({
     trim: true,
     default: null
   },
+  /** WhatsApp Business Account ID from Meta (for Senders API). Set per app when using Meta Embedded Signup. */
+  wabaId: {
+    type: String,
+    trim: true,
+    default: null
+  },
   twilioPhoneNumber: {
     type: String,
     trim: true,
@@ -287,7 +293,8 @@ const appValidationSchema = Joi.object({
     .messages({
       'string.pattern.base': 'Twilio phone number must be in E.164 format (e.g., +1234567890)'
     }),
-  
+    twilioWhatsAppSenderId: Joi.string().optional().allow(null, ''),
+    wabaId: Joi.string().optional().allow(null, ''),
   // Optional Facebook fields used during initial app creation.
   facebookShortLivedToken: Joi.string()
     .trim()
@@ -347,6 +354,10 @@ const appUpdateValidationSchema = Joi.object({
     .optional(),
   
   twilioWhatsAppSenderId: Joi.string()
+    .optional()
+    .allow(null, ''),
+  
+  wabaId: Joi.string()
     .optional()
     .allow(null, ''),
   

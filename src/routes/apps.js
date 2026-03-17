@@ -13,6 +13,8 @@ const { Integration } = require('../models/Integration');
 const { Questionnaire, QUESTIONNAIRE_TYPES } = require('../models/Questionnaire');
 const { QuestionType } = require('../models/QuestionType');
 const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
+const { getTwilioPhoneService } = require('../services/twilioPhoneService');
+const { getWhatsAppSenderService } = require('../services/whatsappSenderService');
 
 const FACEBOOK_GRAPH_BASE_URL = process.env.FACEBOOK_GRAPH_BASE_URL;
 
@@ -184,6 +186,11 @@ class AppController {
 
   // Helper to verify app ownership
   static async verifyAppOwnership(appId, userId) {
+    // Reject non-ObjectIds so paths like "available-numbers" never hit the DB (avoids Cast to ObjectId error)
+    const idStr = String(appId || '');
+    if (!/^[a-fA-F0-9]{24}$/.test(idStr)) {
+      throw new AppError('App not found', 404);
+    }
     // Don't allow access to deleted apps (handle both null and non-existent deletedAt)
     const app = await App.findOne({ 
       _id: appId,
@@ -219,7 +226,7 @@ class AppController {
         industry,
         description,
         whatsappOption,
-        whatsappNumber,
+        whatsappNumber, twilioPhoneNumber, twilioWhatsAppSenderId, wabaId,
         facebookShortLivedToken,
         facebookPageId,
         facebookPageName
@@ -253,12 +260,24 @@ class AppController {
         appData.whatsappNumber = num;
         appData.twilioPhoneNumber = num; // same number is used for webhook lookup (required for leads/flows/AI context)
         appData.whatsappNumberSource = 'user-provided';
-        appData.whatsappNumberStatus = 'pending';
-        // TODO: Register with Twilio Senders API (will be implemented in whatsappService)
+        appData.whatsappNumberStatus = (twilioWhatsAppSenderId && wabaId) ? 'registered' : 'pending';
+        if (twilioWhatsAppSenderId && String(twilioWhatsAppSenderId).trim()) {
+          appData.twilioWhatsAppSenderId = String(twilioWhatsAppSenderId).trim();
+        }
+        if (wabaId != null) appData.wabaId = String(wabaId).trim() || null;
       } else if (whatsappOption === 'get-from-twilio') {
         appData.whatsappNumberSource = 'twilio-provided';
         appData.whatsappNumberStatus = 'pending';
-        // TODO: Provision Twilio number (will be implemented in whatsappService)
+        // Pre-provisioned number (bought only; sender is created by user via Meta signup in Twilio Console)
+        if (twilioPhoneNumber) {
+          const num = twilioPhoneNumber.trim();
+          appData.twilioPhoneNumber = num;
+          appData.whatsappNumber = num;
+          if (twilioWhatsAppSenderId && String(twilioWhatsAppSenderId).trim()) {
+            appData.twilioWhatsAppSenderId = String(twilioWhatsAppSenderId).trim();
+          }
+          if (wabaId != null) appData.wabaId = String(wabaId).trim() || null;
+        }
       }
 
       const app = new App(appData);
@@ -324,6 +343,21 @@ class AppController {
         if (othersWithSameNumber === 0) {
           app.usesTwilioNumber = true;
           await app.save();
+        }
+      }
+
+      // Pre-provisioned get-from-twilio: if we don't have sender SID yet, try to find it (user may have completed Meta signup in Twilio Console)
+      if (whatsappOption === 'get-from-twilio' && num && !app.twilioWhatsAppSenderId) {
+        try {
+          const senderService = getWhatsAppSenderService();
+          const senderSid = await senderService.findSenderSidByPhoneNumber(num);
+          if (senderSid) {
+            app.twilioWhatsAppSenderId = senderSid;
+            await app.save();
+            logger.info(`Linked Twilio sender to app ${app._id}`, { phoneNumber: num, senderSid });
+          }
+        } catch (linkErr) {
+          logger.warn('Could not link Twilio sender to app (user may not have completed Meta signup yet)', { appId: app._id, error: linkErr?.message });
         }
       }
 
@@ -434,6 +468,7 @@ class AppController {
             whatsappNumberSource: app.whatsappNumberSource,
             whatsappNumberStatus: app.whatsappNumberStatus,
             twilioWhatsAppSenderId: app.twilioWhatsAppSenderId,
+            wabaId: app.wabaId || null,
             usesTwilioNumber: !!app.usesTwilioNumber,
             facebookPageId: app.facebookPageId,
             facebookPageName: app.facebookPageName,
@@ -648,8 +683,21 @@ class AppController {
         throw new AppError('WhatsApp number is not configured for this app', 400);
       }
 
-      // TODO: Implement WhatsApp registration with Twilio Senders API
-      // This will be implemented when whatsappService is created
+      const senderService = getWhatsAppSenderService();
+      const apiPrefix = process.env.API_PREFIX || '/api';
+      const apiVersion = process.env.API_VERSION || 'v1';
+      const backendUrl = (process.env.BACKEND_URL || process.env.API_BASE_URL || '').replace(/\/$/, '');
+      const statusCallbackUrl = backendUrl ? `${backendUrl}${apiPrefix}/${apiVersion}/apps/whatsapp/sender-status` : null;
+      const wabaId = app.wabaId || process.env.TWILIO_WABA_ID || null;
+
+      const sender = await senderService.createSender(app.whatsappNumber, {
+        wabaId,
+        statusCallbackUrl,
+        profileName: app.name,
+        verificationMethod: 'sms'
+      });
+
+      app.twilioWhatsAppSenderId = sender.sid;
       app.whatsappNumberStatus = 'pending';
       await app.save();
 
@@ -665,7 +713,283 @@ class AppController {
           }
         }
       });
+    } catch (error) {
+      next(error);
+    }
+  }
 
+  /**
+   * After user completes Meta Embedded Signup (Business, WABA) in-app, register the WhatsApp sender
+   * with the provisioned phone number and WABA ID. Body: { phoneNumber, wabaId }.
+   * For Twilio SMS numbers, verification is handled automatically by Twilio.
+   */
+  async registerSenderAfterMeta(req, res, next) {
+    try {
+      const userId = req.user.id;
+      const { phoneNumber, wabaId } = req.body || {};
+
+      const num = (phoneNumber || '').trim();
+      if (!num || !num.startsWith('+')) {
+        throw new AppError('Valid phoneNumber (E.164) is required', 400);
+      }
+      const waba = (wabaId != null && String(wabaId).trim()) ? String(wabaId).trim() : null;
+      if (!waba) {
+        throw new AppError('wabaId from Meta Embedded Signup is required', 400);
+      }
+
+      const senderService = getWhatsAppSenderService();
+      const apiPrefix = process.env.API_PREFIX || '/api';
+      const apiVersion = process.env.API_VERSION || 'v1';
+      const backendUrl = (process.env.BACKEND_URL || process.env.API_BASE_URL || '').replace(/\/$/, '');
+      const statusCallbackUrl = backendUrl ? `${backendUrl}${apiPrefix}/${apiVersion}/apps/whatsapp/sender-status` : null;
+
+      const sender = await senderService.createSender(num, {
+        wabaId: waba,
+        statusCallbackUrl,
+        profileName: 'Business',
+        verificationMethod: 'sms'
+      });
+
+      logger.info('Sender registered after Meta signup', { userId, phoneNumber: num, senderSid: sender.sid });
+
+      res.status(200).json({
+        status: 'success',
+        message: 'WhatsApp sender registered',
+        data: {
+          senderSid: sender.sid,
+          phoneNumber: num
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * List available phone numbers for a country (SMS+voice). Query: countryCode (e.g. US, GB). Optional: limit (default 20).
+   */
+  async getAvailableNumbers(req, res, next) {
+    try {
+      const userId = req.user.id;
+      const { countryCode, limit } = req.query || {};
+
+      const code = (countryCode || '').trim().toUpperCase();
+      if (!code || code.length !== 2) {
+        throw new AppError('Valid countryCode (ISO 3166-1 alpha-2, e.g. US, GB) is required', 400);
+      }
+
+      const phoneService = getTwilioPhoneService();
+      const maxLimit = Math.min(parseInt(limit, 10) || 20, 50);
+      const numbers = await phoneService.getAvailableNumbers(code, { limit: maxLimit });
+
+      res.status(200).json({
+        status: 'success',
+        data: {
+          countryCode: code,
+          numbers: numbers.map((n) => ({ phoneNumber: n.phoneNumber, friendlyName: n.friendlyName || n.phoneNumber }))
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Provision (buy) a number only. Body: { countryCode } or { countryCode, phoneNumber }.
+   * If phoneNumber is provided, purchases that number; otherwise buys the first available for the country.
+   */
+  async provisionNumber(req, res, next) {
+    try {
+      const userId = req.user.id;
+      const { countryCode, phoneNumber: requestedNumber } = req.body || {};
+
+      const code = (countryCode || '').trim().toUpperCase();
+      if (!code || code.length !== 2) {
+        throw new AppError('Valid countryCode (ISO 3166-1 alpha-2, e.g. US, GB) is required', 400);
+      }
+
+      const phoneService = getTwilioPhoneService();
+      let result;
+      if (requestedNumber && String(requestedNumber).trim().startsWith('+')) {
+        result = await phoneService.purchaseNumber(String(requestedNumber).trim());
+      } else {
+        result = await phoneService.assignFirstAvailableNumber(code);
+      }
+      if (!result) {
+        throw new AppError(`No available numbers for country ${code}`, 404);
+      }
+
+      const { phoneNumber } = result;
+      logger.info('Number provisioned (buy only, no sender)', { userId, phoneNumber });
+
+      res.status(200).json({
+        status: 'success',
+        message: 'Number purchased. Complete Meta WhatsApp signup in the wizard below, then create your app.',
+        data: {
+          phoneNumber
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Assign first available Twilio number for country, then register as WhatsApp sender.
+   * Body: { countryCode } (e.g. "US", "GB"). Optionally { wabaId }.
+   */
+  async assignNumber(req, res, next) {
+    try {
+      const userId = req.user.id;
+      const { id } = req.params;
+      const { countryCode, wabaId } = req.body || {};
+
+      const app = await AppController.verifyAppOwnership(id, userId);
+
+      const code = (countryCode || '').trim().toUpperCase();
+      if (!code || code.length !== 2) {
+        throw new AppError('Valid countryCode (ISO 3166-1 alpha-2, e.g. US, GB) is required', 400);
+      }
+
+      const phoneService = getTwilioPhoneService();
+      const result = await phoneService.assignFirstAvailableNumber(code);
+      if (!result) {
+        throw new AppError(`No available numbers for country ${code}`, 404);
+      }
+
+      const { phoneNumber } = result;
+      app.twilioPhoneNumber = phoneNumber;
+      app.whatsappNumber = phoneNumber;
+      app.whatsappNumberSource = 'twilio-provided';
+      app.whatsappNumberStatus = 'pending';
+      if (wabaId != null) app.wabaId = String(wabaId).trim() || null;
+      await app.save();
+
+      const senderService = getWhatsAppSenderService();
+      const apiPrefix = process.env.API_PREFIX || '/api';
+      const apiVersion = process.env.API_VERSION || 'v1';
+      const backendUrl = (process.env.BACKEND_URL || process.env.API_BASE_URL || '').replace(/\/$/, '');
+      const statusCallbackUrl = backendUrl ? `${backendUrl}${apiPrefix}/${apiVersion}/apps/whatsapp/sender-status` : null;
+      const resolvedWabaId = app.wabaId || process.env.TWILIO_WABA_ID || null;
+
+      const sender = await senderService.createSender(phoneNumber, {
+        wabaId: resolvedWabaId,
+        statusCallbackUrl,
+        profileName: app.name,
+        verificationMethod: 'sms'
+      });
+
+      app.twilioWhatsAppSenderId = sender.sid;
+      await app.save();
+
+      const othersWithSameNumber = await App.countDocuments({
+        owner: userId,
+        _id: { $ne: app._id },
+        isActive: true,
+        $or: [ { whatsappNumber: phoneNumber }, { twilioPhoneNumber: phoneNumber } ]
+      });
+      if (othersWithSameNumber === 0) {
+        app.usesTwilioNumber = true;
+        await app.save();
+      }
+
+      logger.info('Twilio number assigned and sender created', { appId: app._id, phoneNumber, senderSid: sender.sid });
+
+      res.status(200).json({
+        status: 'success',
+        message: 'Number assigned and WhatsApp sender created',
+        data: {
+          app: {
+            id: app._id,
+            twilioPhoneNumber: app.twilioPhoneNumber,
+            whatsappNumber: app.whatsappNumber,
+            whatsappNumberSource: app.whatsappNumberSource,
+            whatsappNumberStatus: app.whatsappNumberStatus,
+            twilioWhatsAppSenderId: app.twilioWhatsAppSenderId
+          }
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Submit verification code for WhatsApp sender (user-provided numbers). Poll or refetch app for status.
+   */
+  async verifyWhatsApp(req, res, next) {
+    try {
+      const userId = req.user.id;
+      const { id } = req.params;
+      const { verificationCode } = req.body || {};
+
+      const app = await AppController.verifyAppOwnership(id, userId);
+
+      if (!app.twilioWhatsAppSenderId) {
+        throw new AppError('No WhatsApp sender to verify. Assign or register a number first.', 400);
+      }
+
+      const code = (verificationCode || '').trim();
+      if (!code) {
+        throw new AppError('verificationCode is required', 400);
+      }
+
+      const senderService = getWhatsAppSenderService();
+      await senderService.submitVerificationCode(app.twilioWhatsAppSenderId, code);
+
+      const updated = await senderService.getSender(app.twilioWhatsAppSenderId);
+      const status = (updated.status || '').toUpperCase();
+      const isOnline = status === 'ONLINE';
+      const isFailed = status === 'OFFLINE' || status === 'FAILED' || (status && status.includes('FAILED'));
+      app.whatsappNumberStatus = isOnline ? 'registered' : (isFailed ? 'failed' : 'pending');
+      await app.save();
+
+      res.status(200).json({
+        status: 'success',
+        message: isOnline ? 'WhatsApp number verified' : 'Verification submitted; status may update shortly',
+        data: {
+          app: {
+            id: app._id,
+            whatsappNumberStatus: app.whatsappNumberStatus,
+            senderStatus: updated.status
+          }
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Twilio sender status callback (webhook). Twilio POSTs here when sender status changes.
+   * Body may include SenderSid, Status, etc. Find app by twilioWhatsAppSenderId and update whatsappNumberStatus.
+   */
+  async whatsappSenderStatusCallback(req, res, next) {
+    try {
+      const { SenderSid, Status } = req.body || {};
+      const sid = (SenderSid || '').trim();
+      if (!sid) {
+        res.status(400).send('SenderSid required');
+        return;
+      }
+
+      const app = await App.findOne({ twilioWhatsAppSenderId: sid }).exec();
+      if (!app) {
+        logger.warn('WhatsApp sender status callback: no app found for sender', { sid });
+        res.status(200).send('OK');
+        return;
+      }
+
+      const status = (Status || '').toUpperCase();
+      if (status === 'ONLINE') {
+        app.whatsappNumberStatus = 'registered';
+      } else if (status === 'OFFLINE' || status === 'FAILED' || status.includes('FAILED')) {
+        app.whatsappNumberStatus = 'failed';
+      }
+      await app.save();
+      logger.info('WhatsApp sender status updated from webhook', { appId: app._id, sid, status, whatsappNumberStatus: app.whatsappNumberStatus });
+
+      res.status(200).send('OK');
     } catch (error) {
       next(error);
     }
@@ -1384,7 +1708,11 @@ class AppController {
 
 const appController = new AppController();
 
-// Routes
+// Routes: literal paths first so they are not matched by /:id (e.g. "available-numbers")
+router.get('/available-numbers', authenticateToken, appController.getAvailableNumbers);
+router.post('/whatsapp/sender-status', (req, res, next) => appController.whatsappSenderStatusCallback(req, res, next));
+router.post('/provision-number', authenticateToken, appController.provisionNumber);
+router.post('/register-sender-after-meta', authenticateToken, appController.registerSenderAfterMeta);
 router.post('/', authenticateToken, appController.createApp);
 router.get('/', authenticateToken, appController.getApps);
 router.get('/by-twilio/:twilioPhoneNumber/context', verifySignedThirdPartyForParamUser, appController.getAppContextByTwilioNumber);
@@ -1393,7 +1721,9 @@ router.get('/by-social-sender/:socialSenderId/context', verifySignedThirdPartyFo
 router.post('/:id/facebook/connect', authenticateToken, appController.connectFacebook.bind(appController));
 router.post('/:id/facebook/disconnect', authenticateToken, appController.disconnectFacebook.bind(appController));
 router.post('/:id/restore', authenticateToken, appController.restoreApp);
+router.post('/:id/assign-number', authenticateToken, appController.assignNumber);
 router.post('/:id/whatsapp/register', authenticateToken, appController.registerWhatsApp);
+router.post('/:id/whatsapp/verify', authenticateToken, appController.verifyWhatsApp);
 router.post('/:id/set-uses-twilio', authenticateToken, appController.setUsesTwilioNumber);
 router.get('/:id', authenticateToken, appController.getApp);
 router.put('/:id', authenticateToken, appController.updateApp);
