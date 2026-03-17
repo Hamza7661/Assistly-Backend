@@ -279,6 +279,7 @@ const appValidationSchema = Joi.object({
     }),
   
   whatsappNumber: Joi.string()
+    .trim()
     .pattern(/^\+[1-9]\d{1,14}$/)
     .optional()
     .allow(null, '')
@@ -287,6 +288,7 @@ const appValidationSchema = Joi.object({
     }),
   
   twilioPhoneNumber: Joi.string()
+    .trim()
     .pattern(/^\+[1-9]\d{1,14}$/)
     .optional()
     .allow(null, '')
@@ -338,6 +340,7 @@ const appUpdateValidationSchema = Joi.object({
     }),
   
   whatsappNumber: Joi.string()
+    .trim()
     .pattern(/^\+[1-9]\d{1,14}$/)
     .optional()
     .allow(null, '')
@@ -362,6 +365,7 @@ const appUpdateValidationSchema = Joi.object({
     .allow(null, ''),
   
   twilioPhoneNumber: Joi.string()
+    .trim()
     .pattern(/^\+[1-9]\d{1,14}$/)
     .optional()
     .allow(null, '')
