@@ -225,7 +225,11 @@ class AppController {
         appData.whatsappNumber = num;
         appData.twilioPhoneNumber = num; // same number is used for webhook lookup (required for leads/flows/AI context)
         appData.whatsappNumberSource = 'user-provided';
-        appData.whatsappNumberStatus = 'pending';
+        appData.whatsappNumberStatus = (twilioWhatsAppSenderId && wabaId) ? 'registered' : 'pending';
+        if (twilioWhatsAppSenderId && String(twilioWhatsAppSenderId).trim()) {
+          appData.twilioWhatsAppSenderId = String(twilioWhatsAppSenderId).trim();
+        }
+        if (wabaId != null) appData.wabaId = String(wabaId).trim() || null;
       } else if (whatsappOption === 'get-from-twilio') {
         appData.whatsappNumberSource = 'twilio-provided';
         appData.whatsappNumberStatus = 'pending';
