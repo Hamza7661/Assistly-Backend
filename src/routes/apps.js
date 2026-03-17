@@ -26,7 +26,8 @@ function getDefaultIntegrationConfig() {
     validateEmail: true,
     validatePhoneNumber: true,
     googleReviewEnabled: false,
-    googleReviewUrl: null
+    googleReviewUrl: null,
+    calendarConnected: false
   };
 }
 
@@ -116,6 +117,40 @@ class AppController {
       pageAccessToken: page.access_token,
       pageName: page.name,
       tokenExpiry
+    };
+  }
+
+  /**
+   * Fetch Instagram Business Account linked to a Facebook Page.
+   * The Page access token works for both Messenger and Instagram when the Page has Instagram linked.
+   * Returns { instagramBusinessAccountId, instagramUsername } or null if no Instagram linked.
+   */
+  static async fetchInstagramBusinessAccount(pageId, pageAccessToken) {
+    const apiVersion = process.env.FACEBOOK_API_VERSION || 'v22.0';
+    const url =
+      `${FACEBOOK_GRAPH_BASE_URL || 'https://graph.facebook.com'}/${apiVersion}/${encodeURIComponent(pageId)}` +
+      `?fields=instagram_business_account{id,username}` +
+      `&access_token=${encodeURIComponent(pageAccessToken)}`;
+
+    const res = await fetch(url);
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok || data.error) {
+      logger.warn('Could not fetch Instagram Business Account for page', {
+        pageId,
+        error: data?.error?.message || res.statusText
+      });
+      return null;
+    }
+
+    const igAccount = data.instagram_business_account;
+    if (!igAccount || !igAccount.id) {
+      return null;
+    }
+
+    return {
+      instagramBusinessAccountId: String(igAccount.id).trim(),
+      instagramUsername: igAccount.username ? String(igAccount.username).trim() : null
     };
   }
 
@@ -1189,6 +1224,8 @@ class AppController {
         validatePhoneNumber: integration.validatePhoneNumber,
         googleReviewEnabled: !!integration.googleReviewEnabled,
         googleReviewUrl: integration.googleReviewUrl || null,
+        calendarConnected: !!integration.googleCalendarConnected,
+        calendarSlotMinutes: integration.calendarSlotMinutes ?? 30,
         leadTypeMessages: integration.leadTypeMessages || []
       } : {
         ...getDefaultIntegrationConfig(),
@@ -1399,6 +1436,8 @@ class AppController {
         validatePhoneNumber: integration.validatePhoneNumber,
         googleReviewEnabled: !!integration.googleReviewEnabled,
         googleReviewUrl: integration.googleReviewUrl || null,
+        calendarConnected: !!integration.googleCalendarConnected,
+        calendarSlotMinutes: integration.calendarSlotMinutes ?? 30,
         leadTypeMessages: integration.leadTypeMessages || []
       } : {
         ...getDefaultIntegrationConfig(),
@@ -1541,6 +1580,35 @@ class AppController {
       app.facebookLongLivedToken = fbData.longLivedToken;
       app.facebookPageAccessToken = fbData.pageAccessToken;
       app.facebookTokenExpiry = fbData.tokenExpiry;
+
+      // Fetch Instagram Business Account if the Page has Instagram linked (for Instagram DMs webhook)
+      try {
+        const igData = await AppController.fetchInstagramBusinessAccount(pageId, fbData.pageAccessToken);
+        if (igData) {
+          app.instagramBusinessAccountId = igData.instagramBusinessAccountId;
+          app.instagramUsername = igData.instagramUsername;
+          // Page access token works for both Messenger and Instagram when Page has Instagram linked
+          app.instagramAccessToken = fbData.pageAccessToken;
+          logger.info('Instagram Business Account linked to app', {
+            appId: app._id,
+            instagramBusinessAccountId: app.instagramBusinessAccountId,
+            instagramUsername: app.instagramUsername
+          });
+        } else {
+          app.instagramBusinessAccountId = null;
+          app.instagramUsername = null;
+          app.instagramAccessToken = null;
+        }
+      } catch (igErr) {
+        logger.warn('Could not fetch Instagram for page (non-fatal)', {
+          pageId,
+          error: igErr?.message
+        });
+        app.instagramBusinessAccountId = null;
+        app.instagramUsername = null;
+        app.instagramAccessToken = null;
+      }
+
       await app.save();
 
       // Invalidate any cached app context so new tokens are picked up where relevant
@@ -1612,6 +1680,9 @@ class AppController {
       app.facebookLongLivedToken = null;
       app.facebookPageAccessToken = null;
       app.facebookTokenExpiry = null;
+      app.instagramBusinessAccountId = null;
+      app.instagramUsername = null;
+      app.instagramAccessToken = null;
       await app.save();
 
       try {

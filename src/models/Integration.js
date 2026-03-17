@@ -78,6 +78,44 @@ const integrationSchema = new mongoose.Schema({
     default: null,
     maxlength: 500
   },
+  /** When true, a calendar is connected for scheduling/availability (provider in calendarProvider). */
+  googleCalendarConnected: {
+    type: Boolean,
+    default: false
+  },
+  /** Which provider is connected: 'google_calendar' | 'outlook' | 'calendly'. Used by appointment scheduler factory. */
+  calendarProvider: {
+    type: String,
+    enum: ['google_calendar', 'outlook', 'calendly'],
+    default: null,
+    trim: true
+  },
+  /** Google Calendar: encrypted refresh token (use utils/encrypt). */
+  googleCalendarRefreshToken: {
+    type: String,
+    default: null,
+    trim: true
+  },
+  /** Google Calendar: calendar ID (default 'primary'). */
+  googleCalendarCalendarId: {
+    type: String,
+    default: 'primary',
+    trim: true,
+    maxlength: 255
+  },
+  /** Email of the connected calendar account (e.g. Google). Shown in UI. */
+  calendarAccountEmail: {
+    type: String,
+    default: null,
+    trim: true,
+    maxlength: 255
+  },
+  /** Slot length in minutes for calendar availability (15, 30, or 60). Used when returning free slots to chatbot. */
+  calendarSlotMinutes: {
+    type: Number,
+    default: 30,
+    enum: [15, 30, 60]
+  },
   /** Preferred languages for this app's chatbot (max 3). ISO 639-1 codes. Used for labels/synonyms UI. */
   preferredLanguages: {
     type: [String],
@@ -178,6 +216,7 @@ const integrationValidationSchema = Joi.object({
   validatePhoneNumber: Joi.boolean().optional(),
   googleReviewEnabled: Joi.boolean().optional(),
   googleReviewUrl: Joi.string().max(500).allow(null, '').optional(),
+  calendarSlotMinutes: Joi.number().valid(15, 30, 60).optional(),
   preferredLanguages: Joi.array().items(Joi.string().trim().lowercase().max(10)).max(3).optional(),
   leadTypeMessages: Joi.array().items(
     Joi.object({
@@ -209,6 +248,7 @@ const integrationUpdateValidationSchema = Joi.object({
   validatePhoneNumber: Joi.boolean().optional(),
   googleReviewEnabled: Joi.boolean().optional(),
   googleReviewUrl: Joi.string().max(500).allow(null, '').optional(),
+  calendarSlotMinutes: Joi.number().valid(15, 30, 60).optional(),
   preferredLanguages: Joi.array().items(Joi.string().trim().lowercase().max(10)).max(3).optional(),
   leadTypeMessages: Joi.array().items(
     Joi.object({

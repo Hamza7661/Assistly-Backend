@@ -22,7 +22,9 @@ const leadTypesRoutes = require('./routes/leadTypes');
 const questionTypesRoutes = require('./routes/questionTypes');
 const leadsRoutes = require('./routes/leads');
 const availabilityRoutes = require('./routes/availability');
+const calendarRoutes = require('./routes/calendar');
 const integrationRoutes = require('./routes/integration');
+const calendarAuthRoutes = require('./routes/calendarAuth');
 const otpRoutes = require('./routes/otp');
 const chatbotWorkflowRoutes = require('./routes/chatbotWorkflow');
 const chatUploadRoutes = require('./routes/chatUpload');
@@ -80,6 +82,8 @@ class Application {
     this.app.use(`${basePath}/question-types`, securityMiddleware.getRateLimiters().api, questionTypesRoutes);
     this.app.use(`${basePath}/leads`, securityMiddleware.getRateLimiters().api, leadsRoutes);
     this.app.use(`${basePath}/availability`, securityMiddleware.getRateLimiters().api, availabilityRoutes);
+    this.app.use(`${basePath}/calendar`, securityMiddleware.getRateLimiters().api, calendarRoutes);
+    this.app.use(`${basePath}/integration`, securityMiddleware.getRateLimiters().api, calendarAuthRoutes);
     this.app.use(`${basePath}/integration`, securityMiddleware.getRateLimiters().api, integrationRoutes);
     this.app.use(`${basePath}/otp`, securityMiddleware.getRateLimiters().api, otpRoutes);
     this.app.use(`${basePath}/chatbot-workflows`, securityMiddleware.getRateLimiters().api, chatbotWorkflowRoutes);
