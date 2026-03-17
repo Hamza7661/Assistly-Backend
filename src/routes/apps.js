@@ -13,8 +13,10 @@ const { Integration } = require('../models/Integration');
 const { Questionnaire, QUESTIONNAIRE_TYPES } = require('../models/Questionnaire');
 const { QuestionType } = require('../models/QuestionType');
 const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
-const { getTwilioPhoneService } = require('../services/twilioPhoneService');
-const { getWhatsAppSenderService } = require('../services/whatsappSenderService');
+const { getTwilioPhoneService, createTwilioPhoneServiceForAccount } = require('../services/twilioPhoneService');
+const { getWhatsAppSenderService, createWhatsAppSenderServiceForAccount } = require('../services/whatsappSenderService');
+const { createTwilioSubaccount } = require('../services/twilioSubaccountService');
+const { encryptAuthToken, decryptAuthToken } = require('../utils/twilioSubaccountToken');
 
 const FACEBOOK_GRAPH_BASE_URL = process.env.FACEBOOK_GRAPH_BASE_URL;
 
@@ -283,6 +285,21 @@ class AppController {
       const app = new App(appData);
       await app.save();
 
+      try {
+        const { sid, authToken: subAuth } = await createTwilioSubaccount(`Assistly ${app.name}`.slice(0, 60));
+        const enc = encryptAuthToken(subAuth);
+        if (enc) {
+          app.twilioSubaccountSid = sid;
+          app.twilioSubaccountAuthTokenEnc = enc;
+          await app.save();
+          logger.info('Twilio subaccount attached to app', { appId: app._id, twilioSubaccountSid: sid });
+        } else {
+          logger.warn('Twilio subaccount token encryption failed; subaccount not persisted', { appId: app._id });
+        }
+      } catch (subErr) {
+        logger.error('Twilio subaccount creation failed', { appId: app._id, error: subErr.message });
+      }
+
       // If Facebook OAuth data was provided at creation time, exchange & store long-lived tokens.
       if (facebookShortLivedToken && facebookPageId) {
         try {
@@ -363,26 +380,28 @@ class AppController {
 
       logger.info(`New app created: ${app.name} (${app._id}) by user ${userId}`);
 
+      const appOut = await App.findById(app._id);
       // Respond immediately so client does not hit gateway timeouts (e.g. Render 502)
       res.status(201).json({
         status: 'success',
         message: 'App created successfully',
         data: {
           app: {
-            id: app._id,
-            name: app.name,
-            industry: app.industry,
-            description: app.description,
-            whatsappNumber: app.whatsappNumber,
-            whatsappNumberSource: app.whatsappNumberSource,
-            whatsappNumberStatus: app.whatsappNumberStatus,
-            facebookPageId: app.facebookPageId,
-            facebookPageName: app.facebookPageName,
-            facebookTokenExpiry: app.facebookTokenExpiry,
-            usesTwilioNumber: !!app.usesTwilioNumber,
-            isActive: app.isActive,
-            createdAt: app.createdAt,
-            updatedAt: app.updatedAt
+            id: appOut._id,
+            name: appOut.name,
+            industry: appOut.industry,
+            description: appOut.description,
+            whatsappNumber: appOut.whatsappNumber,
+            whatsappNumberSource: appOut.whatsappNumberSource,
+            whatsappNumberStatus: appOut.whatsappNumberStatus,
+            facebookPageId: appOut.facebookPageId,
+            facebookPageName: appOut.facebookPageName,
+            facebookTokenExpiry: appOut.facebookTokenExpiry,
+            usesTwilioNumber: !!appOut.usesTwilioNumber,
+            isActive: appOut.isActive,
+            createdAt: appOut.createdAt,
+            updatedAt: appOut.updatedAt,
+            twilioSubaccountReady: !!appOut.twilioSubaccountSid
           }
         }
       });
@@ -470,6 +489,7 @@ class AppController {
             whatsappNumberStatus: app.whatsappNumberStatus,
             twilioWhatsAppSenderId: app.twilioWhatsAppSenderId,
             wabaId: app.wabaId || null,
+            twilioSubaccountReady: !!app.twilioSubaccountSid,
             usesTwilioNumber: !!app.usesTwilioNumber,
             facebookPageId: app.facebookPageId,
             facebookPageName: app.facebookPageName,
@@ -727,7 +747,21 @@ class AppController {
   async registerSenderAfterMeta(req, res, next) {
     try {
       const userId = req.user.id;
-      const { phoneNumber, wabaId } = req.body || {};
+      const { appId, phoneNumber, wabaId } = req.body || {};
+
+      const aid = (appId != null && String(appId).trim()) ? String(appId).trim() : null;
+      if (!aid) {
+        throw new AppError('appId is required', 400);
+      }
+      await AppController.verifyAppOwnership(aid, userId);
+      const appFull = await App.findById(aid).select('+twilioSubaccountAuthTokenEnc');
+      const subToken = decryptAuthToken(appFull.twilioSubaccountAuthTokenEnc);
+      if (!appFull.twilioSubaccountSid || !subToken) {
+        throw new AppError(
+          'This app has no Twilio workspace for WhatsApp. Open app settings and ensure the app was created successfully.',
+          400
+        );
+      }
 
       const num = (phoneNumber || '').trim();
       if (!num || !num.startsWith('+')) {
@@ -738,7 +772,7 @@ class AppController {
         throw new AppError('wabaId from Meta Embedded Signup is required', 400);
       }
 
-      const senderService = getWhatsAppSenderService();
+      const senderService = createWhatsAppSenderServiceForAccount(appFull.twilioSubaccountSid, subToken);
       const apiPrefix = process.env.API_PREFIX || '/api';
       const apiVersion = process.env.API_VERSION || 'v1';
       const backendUrl = (process.env.BACKEND_URL || process.env.API_BASE_URL || '').replace(/\/$/, '');
@@ -747,11 +781,16 @@ class AppController {
       const sender = await senderService.createSender(num, {
         wabaId: waba,
         statusCallbackUrl,
-        profileName: 'Business',
+        profileName: appFull.name || 'Business',
         verificationMethod: 'sms'
       });
 
-      logger.info('Sender registered after Meta signup', { userId, phoneNumber: num, senderSid: sender.sid });
+      appFull.twilioWhatsAppSenderId = sender.sid;
+      appFull.wabaId = waba;
+      appFull.whatsappNumberStatus = 'pending';
+      await appFull.save();
+
+      logger.info('Sender registered after Meta signup', { userId, appId: aid, phoneNumber: num, senderSid: sender.sid });
 
       res.status(200).json({
         status: 'success',
@@ -760,6 +799,106 @@ class AppController {
           senderSid: sender.sid,
           phoneNumber: num
         }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * List available numbers on this app's Twilio subaccount.
+   */
+  async getAvailableNumbersForApp(req, res, next) {
+    try {
+      const userId = req.user.id;
+      const { id } = req.params;
+      const { countryCode, limit } = req.query || {};
+      await AppController.verifyAppOwnership(id, userId);
+      const appFull = await App.findById(id).select('+twilioSubaccountAuthTokenEnc');
+      const token = decryptAuthToken(appFull.twilioSubaccountAuthTokenEnc);
+      if (!appFull.twilioSubaccountSid || !token) {
+        throw new AppError(
+          'WhatsApp number setup is not available yet for this app. Try again in a moment or contact support.',
+          503
+        );
+      }
+      const phoneService = createTwilioPhoneServiceForAccount(appFull.twilioSubaccountSid, token);
+      const code = (countryCode || '').trim().toUpperCase();
+      if (!code || code.length !== 2) {
+        throw new AppError('Valid countryCode (ISO 3166-1 alpha-2, e.g. US, GB) is required', 400);
+      }
+      const maxLimit = Math.min(parseInt(limit, 10) || 20, 50);
+      const numbers = await phoneService.getAvailableNumbers(code, { limit: maxLimit });
+      res.status(200).json({
+        status: 'success',
+        data: {
+          countryCode: code,
+          numbers: numbers.map((n) => ({
+            phoneNumber: n.phoneNumber,
+            friendlyName: n.friendlyName || n.phoneNumber
+          }))
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Purchase a number on this app's Twilio subaccount and attach to the app.
+   */
+  async provisionNumberForApp(req, res, next) {
+    try {
+      const userId = req.user.id;
+      const { id } = req.params;
+      const { countryCode, phoneNumber: requestedNumber } = req.body || {};
+      const app = await AppController.verifyAppOwnership(id, userId);
+      const appFull = await App.findById(id).select('+twilioSubaccountAuthTokenEnc');
+      const token = decryptAuthToken(appFull.twilioSubaccountAuthTokenEnc);
+      if (!appFull.twilioSubaccountSid || !token) {
+        throw new AppError(
+          'WhatsApp number setup is not available yet for this app. Try again in a moment or contact support.',
+          503
+        );
+      }
+      const code = (countryCode || '').trim().toUpperCase();
+      if (!code || code.length !== 2) {
+        throw new AppError('Valid countryCode (ISO 3166-1 alpha-2) is required', 400);
+      }
+      const phoneService = createTwilioPhoneServiceForAccount(appFull.twilioSubaccountSid, token);
+      let result;
+      if (requestedNumber && String(requestedNumber).trim().startsWith('+')) {
+        result = await phoneService.purchaseNumber(String(requestedNumber).trim());
+      } else {
+        result = await phoneService.assignFirstAvailableNumber(code);
+      }
+      if (!result) {
+        throw new AppError(`No available numbers for country ${code}`, 404);
+      }
+      const { phoneNumber } = result;
+      app.twilioPhoneNumber = phoneNumber;
+      app.whatsappNumber = phoneNumber;
+      app.whatsappNumberSource = 'twilio-provided';
+      app.whatsappNumberStatus = 'pending';
+      const num = phoneNumber;
+      const othersWithSameNumber = await App.countDocuments({
+        owner: userId,
+        _id: { $ne: app._id },
+        isActive: true,
+        $and: [
+          { $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] },
+          { $or: [{ whatsappNumber: num }, { twilioPhoneNumber: num }] }
+        ]
+      });
+      if (othersWithSameNumber === 0) {
+        app.usesTwilioNumber = true;
+      }
+      await app.save();
+      logger.info('Number provisioned on app subaccount', { appId: app._id, phoneNumber });
+      res.status(200).json({
+        status: 'success',
+        message: 'Number purchased. Complete Meta WhatsApp registration below.',
+        data: { phoneNumber }
       });
     } catch (error) {
       next(error);
@@ -1721,6 +1860,8 @@ router.get('/by-social-sender/:socialSenderId/context', verifySignedThirdPartyFo
 // More specific routes must come before generic :id routes
 router.post('/:id/facebook/connect', authenticateToken, appController.connectFacebook.bind(appController));
 router.post('/:id/facebook/disconnect', authenticateToken, appController.disconnectFacebook.bind(appController));
+router.get('/:id/available-numbers', authenticateToken, appController.getAvailableNumbersForApp);
+router.post('/:id/provision-number', authenticateToken, appController.provisionNumberForApp);
 router.post('/:id/restore', authenticateToken, appController.restoreApp);
 router.post('/:id/assign-number', authenticateToken, appController.assignNumber);
 router.post('/:id/whatsapp/register', authenticateToken, appController.registerWhatsApp);

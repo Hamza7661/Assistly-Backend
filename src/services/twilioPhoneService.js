@@ -6,9 +6,12 @@ const { logger } = require('../utils/logger');
  * purchase numbers, and assign the first available number (SMS+voice capable).
  */
 class TwilioPhoneService {
-  constructor() {
-    const accountSid = process.env.TWILIO_ACCOUNT_SID;
-    const authToken = process.env.TWILIO_AUTH_TOKEN;
+  /**
+   * @param {{ accountSid?: string, authToken?: string }} [config] - omit to use parent env credentials
+   */
+  constructor(config = {}) {
+    const accountSid = config.accountSid || process.env.TWILIO_ACCOUNT_SID;
+    const authToken = config.authToken || process.env.TWILIO_AUTH_TOKEN;
     if (!accountSid || !authToken) {
       throw new Error('TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN are required');
     }
@@ -94,7 +97,12 @@ function getTwilioPhoneService() {
   return instance;
 }
 
+function createTwilioPhoneServiceForAccount(accountSid, authToken) {
+  return new TwilioPhoneService({ accountSid, authToken });
+}
+
 module.exports = {
   TwilioPhoneService,
-  getTwilioPhoneService
+  getTwilioPhoneService,
+  createTwilioPhoneServiceForAccount
 };
