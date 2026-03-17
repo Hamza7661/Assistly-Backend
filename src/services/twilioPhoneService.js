@@ -17,8 +17,8 @@ class TwilioPhoneService {
 
   /**
    * Get available phone numbers for a country (SMS and voice capable for Meta verification).
-   * Uses only "local" type; mobile/toll-free are not used because some countries (e.g. GB)
-   * require a Regulatory Bundle to purchase mobile numbers.
+   * - For GB (UK): uses "mobile" so accounts with a UK Mobile Regulatory Bundle get results.
+   * - For other countries: uses "local" (geographic) numbers.
    * @param {string} countryCode - ISO 3166-1 alpha-2 (e.g. US, GB)
    * @param {Object} [options] - { limit, areaCode }
    * @returns {Promise<Array<{ phoneNumber: string, friendlyName?: string }>>}
@@ -36,8 +36,10 @@ class TwilioPhoneService {
         voiceEnabled: true
       };
       if (areaCode) listOptions.areaCode = areaCode;
+      // UK (GB) often requires a Mobile Regulatory Bundle; use mobile so users with that bundle get numbers
+      const numberType = country === 'GB' ? 'mobile' : 'local';
       const numbers = await this.client.availablePhoneNumbers(country)
-        .local
+        [numberType]
         .list(listOptions);
       return (numbers || []).map((n) => ({
         phoneNumber: n.phoneNumber,
