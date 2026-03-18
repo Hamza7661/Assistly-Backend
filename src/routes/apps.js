@@ -286,7 +286,8 @@ class AppController {
       await app.save();
 
       try {
-        const { sid, authToken: subAuth } = await createTwilioSubaccount(`Assistly ${app.name}`.slice(0, 60));
+        const subFriendlyName = (app.name || '').trim().slice(0, 64);
+        const { sid, authToken: subAuth } = await createTwilioSubaccount(subFriendlyName);
         const enc = encryptAuthToken(subAuth);
         if (enc) {
           app.twilioSubaccountSid = sid;
