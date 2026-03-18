@@ -3,7 +3,7 @@ const { logger } = require('../utils/logger');
 
 /**
  * Create a Twilio subaccount under the parent account (for per-app WhatsApp isolation).
- * @param {string} friendlyName - e.g. Assistly app name or id
+ * @param {string} friendlyName - e.g. App subaccount name or id
  * @returns {Promise<{ sid: string, authToken: string }>}
  */
 async function createTwilioSubaccount(friendlyName) {
@@ -13,7 +13,7 @@ async function createTwilioSubaccount(friendlyName) {
     throw new Error('TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN are required to create subaccounts');
   }
   const client = twilio(accountSid, authToken);
-  const name = (friendlyName || 'Assistly app').slice(0, 64);
+  const name = (friendlyName || 'App subaccount').slice(0, 64);
   const account = await client.api.accounts.create({ friendlyName: name });
   logger.info('Twilio subaccount created', { sid: account.sid, friendlyName: name });
   return {
