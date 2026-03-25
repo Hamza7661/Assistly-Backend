@@ -64,6 +64,7 @@ class IntegrationController {
             primaryColor: integration.primaryColor,
             validateEmail: integration.validateEmail,
             validatePhoneNumber: integration.validatePhoneNumber,
+            conversationStyle: integration.conversationStyle || false,
             googleReviewEnabled: integration.googleReviewEnabled || false,
             googleReviewUrl: integration.googleReviewUrl || null,
             calendarConnected: !!integration.googleCalendarConnected,
@@ -101,6 +102,9 @@ class IntegrationController {
       // Coerce FormData booleans (sent as strings)
       if (typeof updateData.googleReviewEnabled === 'string') {
         updateData.googleReviewEnabled = updateData.googleReviewEnabled === 'true';
+      }
+      if (typeof updateData.conversationStyle === 'string') {
+        updateData.conversationStyle = updateData.conversationStyle === 'true';
       }
 
       // Handle leadTypeMessages from FormData (it comes as a JSON string)
@@ -145,6 +149,8 @@ class IntegrationController {
         logger.error('Validation error:', { error: error.details, updateData: Object.keys(updateData) });
         return next(new AppError(error.details[0].message, 400));
       }
+
+      const conversationStyleUpdated = Object.prototype.hasOwnProperty.call(value, 'conversationStyle');
 
       // Handle file upload for chatbot image
       if (req.file) {
@@ -224,6 +230,49 @@ class IntegrationController {
         }
       })(); // Immediately invoke async IIFE (fire-and-forget)
 
+      if (conversationStyleUpdated) {
+        (async () => {
+          try {
+            // Fire-and-forget: keep integration update fast
+            const aiBaseUrl = (process.env.ASSISTLY_AI_BASE_URL || 'https://assistly-ai-eu.onrender.com').replace(/\/$/, '');
+            const signingSecret = process.env.THIRD_PARTY_SIGNING_SECRET || '';
+
+            if (!aiBaseUrl) return;
+
+            const headers = { 'Content-Type': 'application/json' };
+            if (signingSecret) headers['X-Invalidate-Sessions-Secret'] = signingSecret;
+
+            const res = await fetch(`${aiBaseUrl}/api/v1/social/conversation-style/invalidate-sessions`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                app_id: appId,
+                conversation_style: integration.conversationStyle || false,
+                idle_seconds: 120
+              })
+            });
+
+            if (!res.ok) {
+              logger.warn('AI conversation-style invalidate returned non-OK', {
+                status: res.status,
+                appId
+              });
+            } else {
+              const data = await res.json().catch(() => ({}));
+              logger.info('Marked AI Messenger/Instagram sessions stale after idle', {
+                appId,
+                removedOrApplied: data,
+              });
+            }
+          } catch (aiErr) {
+            logger.warn('Failed to notify AI about conversationStyle change', {
+              appId,
+              error: aiErr?.message
+            });
+          }
+        })();
+      }
+
       logger.info('Updated integration settings', { appId, updatedFields: Object.keys(value) });
 
       res.status(200).json({
@@ -249,6 +298,7 @@ class IntegrationController {
             primaryColor: integration.primaryColor,
             validateEmail: integration.validateEmail,
             validatePhoneNumber: integration.validatePhoneNumber,
+            conversationStyle: integration.conversationStyle || false,
             googleReviewEnabled: integration.googleReviewEnabled || false,
             googleReviewUrl: integration.googleReviewUrl || null,
             calendarConnected: !!integration.googleCalendarConnected,

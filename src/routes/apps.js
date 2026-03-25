@@ -27,6 +27,7 @@ function getDefaultIntegrationConfig() {
     greeting: process.env.DEFAULT_GREETING || 'Hi this is {assistantName} your virtual ai assistant from {companyName}. How can I help you today?',
     validateEmail: true,
     validatePhoneNumber: true,
+    conversationStyle: false,
     googleReviewEnabled: false,
     googleReviewUrl: null,
     calendarConnected: false
@@ -1362,6 +1363,7 @@ class AppController {
         greeting: integration.greeting,
         validateEmail: integration.validateEmail,
         validatePhoneNumber: integration.validatePhoneNumber,
+        conversationStyle: integration.conversationStyle || false,
         googleReviewEnabled: !!integration.googleReviewEnabled,
         googleReviewUrl: integration.googleReviewUrl || null,
         calendarConnected: !!integration.googleCalendarConnected,
@@ -1574,6 +1576,7 @@ class AppController {
         greeting: integration.greeting,
         validateEmail: integration.validateEmail,
         validatePhoneNumber: integration.validatePhoneNumber,
+        conversationStyle: integration.conversationStyle || false,
         googleReviewEnabled: !!integration.googleReviewEnabled,
         googleReviewUrl: integration.googleReviewUrl || null,
         calendarConnected: !!integration.googleCalendarConnected,
