@@ -31,9 +31,20 @@ class WhatsAppSenderService {
   }
 
   /**
+   * Base URL for the Assistly AI service that receives incoming WhatsApp messages.
+   * Twilio sends webhook requests here so the sender can be ONLINE and receive messages.
+   */
+  _getIncomingWebhookBaseUrl() {
+    const base = (process.env.ASSISTLY_AI_BASE_URL || 'https://assistly-ai-eu.onrender.com').replace(/\/$/, '');
+    return `${base}/webhook/whatsapp`;
+  }
+
+  /**
    * Create and register a WhatsApp sender (Twilio Senders API v2).
    * For Twilio-provided numbers verification is automatic; for user-provided numbers
    * the sender is created in PENDING_VERIFICATION and the user must submit the OTP later.
+   * Always sets the incoming message webhook (callback_url) so the sender can go ONLINE
+   * and receive messages; optionally sets status_callback_url for backend status updates.
    * @param {string} phoneNumber - E.164 format
    * @param {Object} options - { wabaId?, statusCallbackUrl?, profileName?, verificationMethod? }
    * @returns {Promise<{ sid: string, status: string, sender_id: string }>}
@@ -56,11 +67,15 @@ class WhatsAppSenderService {
       payload.configuration.waba_id = String(wabaId).trim();
     }
 
+    // Incoming message webhook (callback_url) is required for sender to be ONLINE and receive WhatsApp messages.
+    const incomingWebhookUrl = this._getIncomingWebhookBaseUrl();
+    payload.webhook = {
+      callback_url: incomingWebhookUrl,
+      callback_method: 'POST'
+    };
     if (statusCallbackUrl) {
-      payload.webhook = {
-        status_callback_url: statusCallbackUrl,
-        status_callback_method: 'POST'
-      };
+      payload.webhook.status_callback_url = statusCallbackUrl;
+      payload.webhook.status_callback_method = 'POST';
     }
 
     try {
