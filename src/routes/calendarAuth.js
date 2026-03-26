@@ -32,7 +32,7 @@ router.get('/apps/:appId/calendar/auth', authenticateToken, verifyAppOwnership, 
 
     const clientId = (process.env.GOOGLE_CALENDAR_CLIENT_ID || '').trim().replace(/^["']|["']$/g, '');
     const clientSecret = (process.env.GOOGLE_CALENDAR_CLIENT_SECRET || '').trim().replace(/^["']|["']$/g, '');
-    const redirectUri = (process.env.GOOGLE_CALENDAR_REDIRECT_URI || `${process.env.APP_URL || 'http://localhost:5000'}/api/v1/integration/calendar/callback`).trim().replace(/^["']|["']$/g, '');
+    const redirectUri = (process.env.GOOGLE_CALENDAR_REDIRECT_URI || `${process.env.APP_URL || 'https://assistly-backend-eu.onrender.com'}/api/v1/integration/calendar/callback`).trim().replace(/^["']|["']$/g, '');
     if (!clientId || !clientSecret) {
       return next(new AppError('Google Calendar OAuth is not configured. Set GOOGLE_CALENDAR_CLIENT_ID and GOOGLE_CALENDAR_CLIENT_SECRET.', 503));
     }
@@ -63,7 +63,7 @@ router.get('/apps/:appId/calendar/auth-url', authenticateToken, verifyAppOwnersh
 
     const clientId = (process.env.GOOGLE_CALENDAR_CLIENT_ID || '').trim().replace(/^["']|["']$/g, '');
     const clientSecret = (process.env.GOOGLE_CALENDAR_CLIENT_SECRET || '').trim().replace(/^["']|["']$/g, '');
-    const redirectUri = (process.env.GOOGLE_CALENDAR_REDIRECT_URI || `${process.env.APP_URL || 'http://localhost:5000'}/api/v1/integration/calendar/callback`).trim().replace(/^["']|["']$/g, '');
+    const redirectUri = (process.env.GOOGLE_CALENDAR_REDIRECT_URI || `${process.env.APP_URL || 'https://assistly-backend-eu.onrender.com'}/api/v1/integration/calendar/callback`).trim().replace(/^["']|["']$/g, '');
     if (!clientId || !clientSecret) {
       return next(new AppError('Google Calendar OAuth is not configured.', 503));
     }
@@ -111,7 +111,7 @@ router.get('/calendar/callback', async (req, res, next) => {
 
     const clientId = (process.env.GOOGLE_CALENDAR_CLIENT_ID || '').trim().replace(/^["']|["']$/g, '');
     const clientSecret = (process.env.GOOGLE_CALENDAR_CLIENT_SECRET || '').trim().replace(/^["']|["']$/g, '');
-    const redirectUri = (process.env.GOOGLE_CALENDAR_REDIRECT_URI || `${process.env.APP_URL || 'http://localhost:5000'}/api/v1/integration/calendar/callback`).trim().replace(/^["']|["']$/g, '');
+    const redirectUri = (process.env.GOOGLE_CALENDAR_REDIRECT_URI || `${process.env.APP_URL || 'https://assistly-backend-eu.onrender.com'}/api/v1/integration/calendar/callback`).trim().replace(/^["']|["']$/g, '');
     if (!clientId || !clientSecret) {
       return res.redirect(failureUrl);
     }
