@@ -66,7 +66,8 @@ class GoogleCalendarProvider extends BaseAppointmentSchedulerProvider {
         end: payload.end,
         title: payload.title || 'Appointment',
         description: payload.description,
-        attendeeEmail: payload.attendeeEmail
+        attendeeEmail: payload.attendeeEmail,
+        timeZone: payload.timeZone
       });
       if (!result) {
         return bookAppointmentError('Could not create event.', PROVIDER_GOOGLE);

@@ -136,7 +136,7 @@ router.get('/apps/:appId/availability', verifySignedThirdPartyForParamUser, asyn
 router.post('/apps/:appId/appointments', verifySignedThirdPartyForParamUser, async (req, res, next) => {
   try {
     const appId = req.params.appId;
-    const { start, end, title, attendeeEmail, description } = req.body || {};
+    const { start, end, title, attendeeEmail, description, timeZone } = req.body || {};
 
     if (!appId) return next(new AppError('App ID is required', 400));
     if (!start || !end || !title) {
@@ -156,7 +156,8 @@ router.post('/apps/:appId/appointments', verifySignedThirdPartyForParamUser, asy
       end,
       title,
       attendeeEmail,
-      description
+      description,
+      timeZone
     });
 
     res.status(viewModel.success ? 201 : 200).json({
