@@ -108,18 +108,19 @@ function computeFreeSlots(timeMin, timeMax, busy, slotMinutes = 30) {
  * Create an event on Google Calendar.
  * @param {string} encryptedRefreshToken
  * @param {string} calendarId
- * @param {{ start: string, end: string, title: string, description?: string, attendeeEmail?: string }} payload
+ * @param {{ start: string, end: string, title: string, description?: string, attendeeEmail?: string, timeZone?: string }} payload
  * @returns {Promise<{ eventId: string, link?: string, start: string, end: string, title: string }|null>}
  */
 async function createEvent(encryptedRefreshToken, calendarId, payload) {
   const auth = await getOAuth2Client(encryptedRefreshToken);
   if (!auth) return null;
   const calendar = google.calendar({ version: 'v3', auth });
+  const eventTimeZone = payload.timeZone || 'UTC';
   const resource = {
     summary: payload.title || 'Appointment',
     description: payload.description || '',
-    start: { dateTime: payload.start, timeZone: 'UTC' },
-    end: { dateTime: payload.end, timeZone: 'UTC' }
+    start: { dateTime: payload.start, timeZone: eventTimeZone },
+    end: { dateTime: payload.end, timeZone: eventTimeZone }
   };
   if (payload.attendeeEmail) {
     resource.attendees = [{ email: payload.attendeeEmail }];

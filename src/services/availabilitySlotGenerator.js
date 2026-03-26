@@ -94,9 +94,10 @@ function getAllowedWindowsForDay(dateStr, dayOfWeek, weeklyDay, exception) {
  * @param {Date} windowEnd
  * @param {number} slotMinutes
  * @param {Array<{ start: string|Date, end: string|Date }>} busy - ISO or Date
- * @returns {Array<{ start: string, end: string }>} ISO strings
+ * @param {string} [timezone='UTC']
+ * @returns {Array<{ start: string, end: string, timezone: string }>} ISO strings
  */
-function sliceIntoSlots(windowStart, windowEnd, slotMinutes, busy) {
+function sliceIntoSlots(windowStart, windowEnd, slotMinutes, busy, timezone = 'UTC') {
   const slotMs = slotMinutes * 60 * 1000;
   const busyTuples = (busy || []).map((b) => ({
     start: typeof b.start === 'string' ? new Date(b.start).getTime() : b.start.getTime(),
@@ -115,7 +116,8 @@ function sliceIntoSlots(windowStart, windowEnd, slotMinutes, busy) {
     if (!overlaps) {
       result.push({
         start: new Date(cursor).toISOString(),
-        end: new Date(slotEndTs).toISOString()
+        end: new Date(slotEndTs).toISOString(),
+        timezone
       });
     }
     cursor += slotMs;
@@ -198,7 +200,8 @@ function generateSlotsFromRules(opts) {
         new Date(rangeMin),
         new Date(rangeMax),
         slotMinutes,
-        providerBusy
+        providerBusy,
+        weeklyDay.timezone || 'UTC'
       );
       freeSlots.push(...slotList);
     }
