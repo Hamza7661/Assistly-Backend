@@ -352,6 +352,7 @@ class UserController {
         greeting: integration.greeting,
         validateEmail: integration.validateEmail,
         validatePhoneNumber: integration.validatePhoneNumber,
+        conversationStyle: integration.conversationStyle || false,
         googleReviewEnabled: !!integration.googleReviewEnabled,
         googleReviewUrl: integration.googleReviewUrl || null
       } : {
@@ -360,6 +361,7 @@ class UserController {
         greeting: process.env.DEFAULT_GREETING || 'Hi this is {assistantName} your virtual ai assistant from {companyName}. How can I help you today?',
         validateEmail: true,
         validatePhoneNumber: true,
+        conversationStyle: false,
         googleReviewEnabled: false,
         googleReviewUrl: null
       };
@@ -592,6 +594,7 @@ class UserController {
         greeting: integration.greeting,
         validateEmail: integration.validateEmail,
         validatePhoneNumber: integration.validatePhoneNumber,
+        conversationStyle: integration.conversationStyle || false,
         googleReviewEnabled: !!integration.googleReviewEnabled,
         googleReviewUrl: integration.googleReviewUrl || null,
         leadTypeMessages: integration.leadTypeMessages || []
@@ -601,6 +604,7 @@ class UserController {
         greeting: process.env.DEFAULT_GREETING || 'Hi this is {assistantName} your virtual ai assistant from {companyName}. How can I help you today?',
         validateEmail: true,
         validatePhoneNumber: true,
+        conversationStyle: false,
         googleReviewEnabled: false,
         googleReviewUrl: null,
         leadTypeMessages: []
@@ -877,6 +881,7 @@ class UserController {
         greeting: integration.greeting,
         validateEmail: integration.validateEmail,
         validatePhoneNumber: integration.validatePhoneNumber,
+        conversationStyle: integration.conversationStyle || false,
         googleReviewEnabled: !!integration.googleReviewEnabled,
         googleReviewUrl: integration.googleReviewUrl || null,
         leadTypeMessages: integration.leadTypeMessages || []
@@ -886,6 +891,7 @@ class UserController {
         greeting: process.env.DEFAULT_GREETING || 'Hi this is {assistantName} your virtual ai assistant from {companyName}. How can I help you today?',
         validateEmail: true,
         validatePhoneNumber: true,
+        conversationStyle: false,
         googleReviewEnabled: false,
         googleReviewUrl: null,
         leadTypeMessages: []
