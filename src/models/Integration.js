@@ -91,6 +91,16 @@ const integrationSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  /** Provider-specific connection flag for Outlook Calendar. */
+  outlookCalendarConnected: {
+    type: Boolean,
+    default: false
+  },
+  /** Provider-specific connection flag for Calendly. */
+  calendlyConnected: {
+    type: Boolean,
+    default: false
+  },
   /** Which provider is connected: 'google_calendar' | 'outlook' | 'calendly'. Used by appointment scheduler factory. */
   calendarProvider: {
     type: String,
@@ -106,6 +116,19 @@ const integrationSchema = new mongoose.Schema({
   },
   /** Google Calendar: calendar ID (default 'primary'). */
   googleCalendarCalendarId: {
+    type: String,
+    default: 'primary',
+    trim: true,
+    maxlength: 255
+  },
+  /** Outlook Calendar: encrypted refresh token (use utils/encrypt). */
+  outlookCalendarRefreshToken: {
+    type: String,
+    default: null,
+    trim: true
+  },
+  /** Outlook Calendar: calendar ID (default 'primary'). */
+  outlookCalendarCalendarId: {
     type: String,
     default: 'primary',
     trim: true,
