@@ -9,6 +9,14 @@ const { verifyAppOwnership } = require('../middleware/appOwnership');
 const { uploadSingle } = require('../middleware/upload');
 const cacheManager = require('../utils/cache');
 
+function isAnyCalendarConnected(integration) {
+  return !!(
+    integration?.googleCalendarConnected ||
+    integration?.outlookCalendarConnected ||
+    integration?.calendlyConnected
+  );
+}
+
 class IntegrationController {
   async getIntegration(req, res, next) {
     try {
@@ -67,7 +75,10 @@ class IntegrationController {
             conversationStyle: integration.conversationStyle || false,
             googleReviewEnabled: integration.googleReviewEnabled || false,
             googleReviewUrl: integration.googleReviewUrl || null,
-            calendarConnected: !!integration.googleCalendarConnected,
+            calendarConnected: isAnyCalendarConnected(integration),
+            googleCalendarConnected: !!integration.googleCalendarConnected,
+            outlookCalendarConnected: !!integration.outlookCalendarConnected,
+            calendlyConnected: !!integration.calendlyConnected,
             calendarProvider: integration.calendarProvider || null,
             calendarAccountEmail: integration.calendarAccountEmail || null,
             calendarSlotMinutes: integration.calendarSlotMinutes ?? 30,
@@ -301,7 +312,10 @@ class IntegrationController {
             conversationStyle: integration.conversationStyle || false,
             googleReviewEnabled: integration.googleReviewEnabled || false,
             googleReviewUrl: integration.googleReviewUrl || null,
-            calendarConnected: !!integration.googleCalendarConnected,
+            calendarConnected: isAnyCalendarConnected(integration),
+            googleCalendarConnected: !!integration.googleCalendarConnected,
+            outlookCalendarConnected: !!integration.outlookCalendarConnected,
+            calendlyConnected: !!integration.calendlyConnected,
             calendarProvider: integration.calendarProvider || null,
             calendarAccountEmail: integration.calendarAccountEmail || null,
             calendarSlotMinutes: integration.calendarSlotMinutes ?? 30,
