@@ -4,10 +4,13 @@ const { verifySignedThirdPartyForParamUser } = require('../middleware/thirdParty
 const { Integration } = require('../models/Integration');
 const { Availability } = require('../models/Availability');
 const { AvailabilityException } = require('../models/AvailabilityException');
+const { App } = require('../models/App');
+const { User } = require('../models/User');
 const { getAppointmentSchedulerProvider, PROVIDER_GOOGLE } = require('../integrations/appointment/appointmentSchedulerFactory');
 const { availabilitySuccess, availabilityNotConnectedOrError } = require('../integrations/appointment/commonViewModel');
 const { generateSlotsFromRules, isAllowedSlotMinutes } = require('../services/availabilitySlotGenerator');
 const { logger } = require('../utils/logger');
+const EmailService = require('../utils/emailService');
 
 const router = express.Router();
 
@@ -163,6 +166,50 @@ router.post('/apps/:appId/appointments', verifySignedThirdPartyForParamUser, asy
       description,
       timeZone
     });
+
+    if (viewModel.success) {
+      try {
+        const app = await App.findById(appId).select('owner name').lean().exec();
+        const owner = app?.owner ? await User.findById(app.owner).select('email firstName lastName').lean().exec() : null;
+        const integration = await Integration.findOne({ owner: appId })
+          .select('assistantName primaryColor chatbotImage')
+          .lean()
+          .exec();
+        const emailService = new EmailService();
+        const logoUrl = integration?.chatbotImage?.filename
+          ? `${process.env.NEXT_PUBLIC_API_URL || ''}/api/v1/integration/public/apps/${appId}/chatbot-image`
+          : '';
+        const businessData = {
+          name: integration?.assistantName || app?.name || 'Business',
+          email: 'blackpanther2958@gmail.com',
+          primaryColor: integration?.primaryColor || '#c01721',
+          logoUrl
+        };
+        const appointmentData = {
+          serviceName: title,
+          title,
+          startText: new Date(start).toLocaleString(),
+          endText: new Date(end).toLocaleString(),
+          link: viewModel.link || ''
+        };
+        if (attendeeEmail) {
+          await emailService.sendAppointmentConfirmationEmail(
+            { name: 'Customer', email: attendeeEmail },
+            appointmentData,
+            businessData
+          );
+        }
+        if (businessData.email) {
+          await emailService.sendAppointmentBusinessNotificationEmail(
+            businessData,
+            { name: 'Customer', email: attendeeEmail || 'Not provided', phone: 'Not provided' },
+            appointmentData
+          );
+        }
+      } catch (emailErr) {
+        logger.error('Calendar booking email sending failed', { appId, error: emailErr.message });
+      }
+    }
 
     res.status(viewModel.success ? 201 : 200).json({
       status: viewModel.success ? 'success' : 'error',
