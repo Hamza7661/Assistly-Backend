@@ -231,6 +231,82 @@ class EmailService {
     return this.sendEmail(emailData);
   }
 
+  async sendAppointmentConfirmationEmail(customerData, appointmentData, businessData = {}) {
+    const customerName = customerData?.name || 'Customer';
+    const customerEmail = customerData?.email;
+    if (!customerEmail) throw new Error('Customer email is required');
+    const businessName = businessData?.name || process.env.FROM_NAME || 'Our Team';
+    const primaryColor = businessData?.primaryColor || '#c01721';
+    const logoUrl = businessData?.logoUrl || '';
+    const serviceName = appointmentData?.serviceName || appointmentData?.title || 'Appointment';
+    const startText = appointmentData?.startText || '';
+    const endText = appointmentData?.endText || '';
+    const calendarLink = appointmentData?.link || '';
+
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; background:#f8fafc; padding:24px;">
+        <div style="max-width:640px; margin:0 auto; background:#fff; border-radius:12px; border:1px solid #e5e7eb; overflow:hidden;">
+          <div style="padding:20px; background:${primaryColor}; color:#fff;">
+            ${logoUrl ? `<img src="${logoUrl}" alt="${businessName}" style="height:40px; margin-bottom:10px;" />` : ''}
+            <h2 style="margin:0;">Appointment Confirmed</h2>
+          </div>
+          <div style="padding:20px; color:#111827;">
+            <p>Hi ${customerName},</p>
+            <p>Your appointment has been successfully created with <strong>${businessName}</strong>.</p>
+            <p><strong>Service:</strong> ${serviceName}</p>
+            <p><strong>Date & Time:</strong> ${startText}${endText ? ` - ${endText}` : ''}</p>
+            ${calendarLink ? `<p><a href="${calendarLink}" style="color:${primaryColor};">View appointment in calendar</a></p>` : ''}
+            <p style="margin-top:16px;">Thanks,<br/>${businessName}</p>
+          </div>
+        </div>
+      </div>
+    `;
+    return this.sendEmail({
+      to: customerEmail,
+      subject: `Appointment Confirmed - ${serviceName}`,
+      htmlContent,
+      textContent: `Hi ${customerName}, your appointment for ${serviceName} is confirmed at ${startText}.`
+    });
+  }
+
+  async sendAppointmentBusinessNotificationEmail(businessData, customerData, appointmentData) {
+    const businessEmail = businessData?.email;
+    if (!businessEmail) throw new Error('Business email is required');
+    const businessName = businessData?.name || 'Business';
+    const customerName = customerData?.name || 'Customer';
+    const customerEmail = customerData?.email || 'Not provided';
+    const customerPhone = customerData?.phone || 'Not provided';
+    const serviceName = appointmentData?.serviceName || appointmentData?.title || 'Appointment';
+    const startText = appointmentData?.startText || '';
+    const endText = appointmentData?.endText || '';
+    const calendarLink = appointmentData?.link || '';
+
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; background:#f8fafc; padding:24px;">
+        <div style="max-width:640px; margin:0 auto; background:#fff; border-radius:12px; border:1px solid #e5e7eb; overflow:hidden;">
+          <div style="padding:20px; background:#111827; color:#fff;">
+            <h2 style="margin:0;">New Appointment Booked</h2>
+          </div>
+          <div style="padding:20px; color:#111827;">
+            <p>${businessName}, a new appointment was booked.</p>
+            <p><strong>Service:</strong> ${serviceName}</p>
+            <p><strong>Date & Time:</strong> ${startText}${endText ? ` - ${endText}` : ''}</p>
+            <p><strong>Customer:</strong> ${customerName}</p>
+            <p><strong>Email:</strong> ${customerEmail}</p>
+            <p><strong>Phone:</strong> ${customerPhone}</p>
+            ${calendarLink ? `<p><a href="${calendarLink}">Open in calendar</a></p>` : ''}
+          </div>
+        </div>
+      </div>
+    `;
+    return this.sendEmail({
+      to: businessEmail,
+      subject: `New Appointment - ${serviceName}`,
+      htmlContent,
+      textContent: `New appointment booked for ${serviceName} at ${startText}. Customer: ${customerName} (${customerEmail}, ${customerPhone}).`
+    });
+  }
+
   /**
    * Test email service configuration
    * @returns {Promise<boolean>} True if configuration is valid

@@ -12,6 +12,26 @@ const leadSchema = new mongoose.Schema({
   leadEmail: { type: String, trim: true, lowercase: true, default: null, maxlength: 200 },
   leadType: { type: String, default: null, index: true },
   serviceType: { type: String, default: null, index: true },
+  sourceChannel: { type: String, default: null, index: true },
+  status: { type: String, enum: ['interacting', 'in_progress', 'complete'], default: 'interacting', index: true },
+  location: {
+    country: { type: String, trim: true, default: null },
+    countryCode: { type: String, trim: true, default: null }
+  },
+  initialInteraction: { type: String, trim: true, default: null, maxlength: 300 },
+  clickedItems: [{ type: String, trim: true, maxlength: 300 }],
+  appointmentDetails: {
+    eventId: { type: String, trim: true, default: null },
+    start: { type: Date, default: null },
+    end: { type: Date, default: null },
+    link: { type: String, trim: true, default: null },
+    confirmed: { type: Boolean, default: false }
+  },
+  leadTypeSwitchHistory: [{
+    from: { type: String, trim: true, default: null, maxlength: 150 },
+    to: { type: String, trim: true, default: null, maxlength: 150 },
+    at: { type: Date, default: Date.now }
+  }],
   history: [{
     role: { type: String, enum: ['user', 'assistant', 'system'], default: 'user' },
     content: { type: String, trim: true, default: null }
@@ -23,6 +43,12 @@ const leadSchema = new mongoose.Schema({
 
 leadSchema.index({ appId: 1, createdAt: -1 });
 leadSchema.index({ userId: 1, createdAt: -1 }); // Legacy index
+// Dedupe/reuse query optimization for public interaction leads:
+// filters by userId + status + createdAt and may also include appId/sourceChannel.
+leadSchema.index({ userId: 1, status: 1, createdAt: -1 });
+leadSchema.index({ userId: 1, appId: 1, status: 1, createdAt: -1 });
+leadSchema.index({ userId: 1, sourceChannel: 1, status: 1, createdAt: -1 });
+leadSchema.index({ userId: 1, appId: 1, sourceChannel: 1, status: 1, createdAt: -1 });
 
 leadSchema.pre('save', function(next) {
   const now = new Date();
@@ -50,6 +76,28 @@ const leadCreateSchema = Joi.object({
   }).optional(),
   leadType: Joi.string().allow(null, '').optional(),
   serviceType: Joi.string().allow(null, '').optional(),
+  sourceChannel: Joi.string().allow(null, '').optional(),
+  status: Joi.string().valid('interacting', 'in_progress', 'complete').optional(),
+  location: Joi.object({
+    country: Joi.string().allow(null, '').optional(),
+    countryCode: Joi.string().allow(null, '').optional()
+  }).allow(null).optional(),
+  initialInteraction: Joi.string().max(300).allow(null, '').optional(),
+  clickedItems: Joi.array().items(Joi.string().max(300)).allow(null).optional(),
+  appointmentDetails: Joi.object({
+    eventId: Joi.string().allow(null, '').optional(),
+    start: Joi.date().iso().allow(null).optional(),
+    end: Joi.date().iso().allow(null).optional(),
+    link: Joi.string().allow(null, '').optional(),
+    confirmed: Joi.boolean().optional()
+  }).allow(null).optional(),
+  leadTypeSwitchHistory: Joi.array().items(
+    Joi.object({
+      from: Joi.string().max(150).allow(null, '').optional(),
+      to: Joi.string().max(150).allow(null, '').optional(),
+      at: Joi.date().iso().allow(null).optional()
+    })
+  ).allow(null).optional(),
   history: Joi.array().items(
     Joi.object({
       role: Joi.string().valid('user', 'assistant', 'system').optional(),
@@ -62,6 +110,8 @@ const leadQuerySchema = Joi.object({
   q: Joi.string().max(200).optional(),
   leadType: Joi.string().optional(),
   serviceType: Joi.string().optional(),
+  sourceChannel: Joi.string().optional(),
+  status: Joi.string().valid('interacting', 'in_progress', 'complete').optional(),
   sortBy: Joi.string().valid('leadDateTime', 'createdAt', 'updatedAt', 'title').default('leadDateTime'),
   sortOrder: Joi.string().valid('asc', 'desc').default('desc'),
   page: Joi.number().integer().min(1).default(1),
@@ -84,6 +134,28 @@ const leadUpdateSchema = Joi.object({
   }).optional(),
   leadType: Joi.string().allow(null, '').optional(),
   serviceType: Joi.string().allow(null, '').optional(),
+  sourceChannel: Joi.string().allow(null, '').optional(),
+  status: Joi.string().valid('interacting', 'in_progress', 'complete').optional(),
+  location: Joi.object({
+    country: Joi.string().allow(null, '').optional(),
+    countryCode: Joi.string().allow(null, '').optional()
+  }).allow(null).optional(),
+  initialInteraction: Joi.string().max(300).allow(null, '').optional(),
+  clickedItems: Joi.array().items(Joi.string().max(300)).allow(null).optional(),
+  appointmentDetails: Joi.object({
+    eventId: Joi.string().allow(null, '').optional(),
+    start: Joi.date().iso().allow(null).optional(),
+    end: Joi.date().iso().allow(null).optional(),
+    link: Joi.string().allow(null, '').optional(),
+    confirmed: Joi.boolean().optional()
+  }).allow(null).optional(),
+  leadTypeSwitchHistory: Joi.array().items(
+    Joi.object({
+      from: Joi.string().max(150).allow(null, '').optional(),
+      to: Joi.string().max(150).allow(null, '').optional(),
+      at: Joi.date().iso().allow(null).optional()
+    })
+  ).allow(null).optional(),
   history: Joi.array().items(
     Joi.object({
       role: Joi.string().valid('user', 'assistant', 'system').optional(),

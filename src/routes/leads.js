@@ -9,6 +9,31 @@ const websocketServer = require('../utils/websocketServer');
 
 const router = express.Router();
 
+function buildLeadBroadcastPayload(lead) {
+  return {
+    _id: lead._id,
+    title: lead.title,
+    leadName: lead.leadName,
+    leadEmail: lead.leadEmail,
+    leadPhoneNumber: lead.leadPhoneNumber,
+    leadType: lead.leadType,
+    serviceType: lead.serviceType,
+    sourceChannel: lead.sourceChannel,
+    status: lead.status,
+    location: lead.location,
+    initialInteraction: lead.initialInteraction,
+    clickedItems: lead.clickedItems,
+    appointmentDetails: lead.appointmentDetails,
+    leadTypeSwitchHistory: lead.leadTypeSwitchHistory,
+    summary: lead.summary,
+    description: lead.description,
+    history: lead.history,
+    leadDateTime: lead.leadDateTime,
+    createdAt: lead.createdAt,
+    updatedAt: lead.updatedAt
+  };
+}
+
 /** Resolve if current user may access this lead (for routes that don't have req.appId, e.g. GET/PUT/DELETE /:id) */
 async function canAccessLead(lead, userId, userRole, reqAppId) {
   if (userRole === 'admin') return true;
@@ -36,21 +61,7 @@ router.post('/apps/:appId', authenticateToken, verifyAppOwnership, async (req, r
     
     // Broadcast new lead to user via WebSocket
     websocketServer.broadcastToUser(userId, {
-      lead: {
-        _id: lead._id,
-        title: lead.title,
-        leadName: lead.leadName,
-        leadEmail: lead.leadEmail,
-        leadPhoneNumber: lead.leadPhoneNumber,
-        leadType: lead.leadType,
-        serviceType: lead.serviceType,
-        summary: lead.summary,
-        description: lead.description,
-        history: lead.history,
-        leadDateTime: lead.leadDateTime,
-        createdAt: lead.createdAt,
-        updatedAt: lead.updatedAt
-      }
+      lead: buildLeadBroadcastPayload(lead)
     });
     
     res.status(201).json({ status: 'success', message: 'Lead created', data: { lead } });
@@ -74,21 +85,7 @@ router.post('/', authenticateToken, requireUserOrAdmin, async (req, res, next) =
     
     // Broadcast new lead to user via WebSocket
     websocketServer.broadcastToUser(userId, {
-      lead: {
-        _id: lead._id,
-        title: lead.title,
-        leadName: lead.leadName,
-        leadEmail: lead.leadEmail,
-        leadPhoneNumber: lead.leadPhoneNumber,
-        leadType: lead.leadType,
-        serviceType: lead.serviceType,
-        summary: lead.summary,
-        description: lead.description,
-        history: lead.history,
-        leadDateTime: lead.leadDateTime,
-        createdAt: lead.createdAt,
-        updatedAt: lead.updatedAt
-      }
+      lead: buildLeadBroadcastPayload(lead)
     });
     
     res.status(201).json({ status: 'success', message: 'Lead created', data: { lead } });
@@ -123,6 +120,7 @@ router.get('/apps/:appId', authenticateToken, verifyAppOwnership, async (req, re
     const conditions = [ { appId } ];
     if (value.leadType) conditions.push({ leadType: value.leadType });
     if (value.serviceType) conditions.push({ serviceType: value.serviceType });
+    if (value.sourceChannel) conditions.push({ sourceChannel: value.sourceChannel });
     if (value.q && String(value.q).trim().length > 0) {
       const needle = String(value.q).trim();
       const rx = new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
@@ -175,6 +173,7 @@ router.get('/user/:userId', authenticateToken, requireUserOrAdmin, async (req, r
     const conditions = [ { userId } ];
     if (value.leadType) conditions.push({ leadType: value.leadType });
     if (value.serviceType) conditions.push({ serviceType: value.serviceType });
+    if (value.sourceChannel) conditions.push({ sourceChannel: value.sourceChannel });
     if (value.q && String(value.q).trim().length > 0) {
       const needle = String(value.q).trim();
       const rx = new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
@@ -248,8 +247,6 @@ router.delete('/:id', authenticateToken, requireUserOrAdmin, async (req, res, ne
   } catch (err) { next(err); }
 });
 
-module.exports = router;
- 
 // HMAC public create for a specific user (no JWT)
 router.post('/public/:userId', verifySignedThirdPartyForParamUser, async (req, res, next) => {
   try {
@@ -259,33 +256,70 @@ router.post('/public/:userId', verifySignedThirdPartyForParamUser, async (req, r
       const messages = error.details.map(d => d.message);
       throw new AppError(`Validation failed: ${messages.join(', ')}`, 400);
     }
-    // Accept appId from body for app-scoped leads (from widget)
-    // Falls back to userId-only for legacy/WhatsApp flows
-    const leadData = value.appId ? { userId, ...value } : { userId, ...value };
+    // Configurable dedupe window (hours): request override > env > default(4).
+    const requestWindow = Number(req.body?.dedupeWindowHours);
+    const envWindow = Number(process.env.LEAD_DEDUPE_WINDOW_HOURS);
+    const dedupeWindowHours = Number.isFinite(requestWindow) && requestWindow > 0
+      ? requestWindow
+      : (Number.isFinite(envWindow) && envWindow > 0 ? envWindow : 4);
+    const dedupeCutoff = new Date(Date.now() - dedupeWindowHours * 60 * 60 * 1000);
+
+    // Reuse most recent open lead inside window instead of creating duplicates.
+    // Scope includes app/source when available to avoid cross-channel collisions.
+    const reuseFilter = {
+      userId,
+      status: { $in: ['interacting', 'in_progress'] },
+      createdAt: { $gte: dedupeCutoff }
+    };
+    if (value.appId) reuseFilter.appId = value.appId;
+    if (value.sourceChannel) reuseFilter.sourceChannel = value.sourceChannel;
+
+    const existingOpenLead = await Lead.findOne(reuseFilter).sort({ createdAt: -1 });
+    if (existingOpenLead) {
+      const mergeData = { ...value };
+      // Prevent accidental data loss when create payload contains empty defaults.
+      if (Array.isArray(mergeData.clickedItems) && mergeData.clickedItems.length === 0) delete mergeData.clickedItems;
+      if (!mergeData.initialInteraction) delete mergeData.initialInteraction;
+      if (existingOpenLead.status === 'in_progress' && mergeData.status === 'interacting') delete mergeData.status;
+      Object.assign(existingOpenLead, mergeData);
+      await existingOpenLead.save();
+      websocketServer.broadcastToUser(userId, { lead: buildLeadBroadcastPayload(existingOpenLead) });
+      return res.status(200).json({ status: 'success', message: 'Lead reused', data: { lead: existingOpenLead } });
+    }
+
+    // Accept appId from body for app-scoped leads (from widget).
+    const leadData = { userId, ...value };
     const lead = new Lead(leadData);
     await lead.save();
     
     // Broadcast new lead to user via WebSocket
     websocketServer.broadcastToUser(userId, {
-      lead: {
-        _id: lead._id,
-        title: lead.title,
-        leadName: lead.leadName,
-        leadEmail: lead.leadEmail,
-        leadPhoneNumber: lead.leadPhoneNumber,
-        leadType: lead.leadType,
-        serviceType: lead.serviceType,
-        summary: lead.summary,
-        description: lead.description,
-        history: lead.history,
-        leadDateTime: lead.leadDateTime,
-        createdAt: lead.createdAt,
-        updatedAt: lead.updatedAt
-      }
+      lead: buildLeadBroadcastPayload(lead)
     });
     
     res.status(201).json({ status: 'success', message: 'Lead created', data: { lead } });
   } catch (err) { next(err); }
 });
+
+// HMAC public partial update (no JWT)
+router.patch('/public/:userId/:leadId', verifySignedThirdPartyForParamUser, async (req, res, next) => {
+  try {
+    const { userId, leadId } = req.params;
+    if (!leadId) return next(new AppError('Lead ID is required', 400));
+    const { error, value } = leadUpdateSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
+    if (error) {
+      const messages = error.details.map(d => d.message);
+      throw new AppError(`Validation failed: ${messages.join(', ')}`, 400);
+    }
+    const lead = await Lead.findById(leadId);
+    if (!lead) return next(new AppError('Lead not found', 404));
+    Object.assign(lead, value);
+    await lead.save();
+    websocketServer.broadcastToUser(userId, { lead: buildLeadBroadcastPayload(lead) });
+    res.status(200).json({ status: 'success', message: 'Lead updated', data: { lead } });
+  } catch (err) { next(err); }
+});
+
+module.exports = router;
 
 
