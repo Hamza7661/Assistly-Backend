@@ -143,19 +143,22 @@ function generateSlotsFromRules(opts) {
     weeklyAvailability = [],
     exceptions = [],
     providerBusy = [],
-    slotMinutes = 30
+    slotMinutes = 30,
+    defaultTimezone = null
   } = opts;
 
   if (!isAllowedSlotMinutes(slotMinutes)) {
     throw new Error(`slotMinutes must be one of ${ALLOWED_SLOT_MINUTES.join(', ')}`);
   }
 
+  const tzFallback = defaultTimezone || 'UTC';
+
   const weeklyByDay = new Map();
   (weeklyAvailability || []).forEach((w) => {
     weeklyByDay.set(w.dayOfWeek, {
       allDay: !!w.allDay,
       slots: w.slots || [],
-      timezone: w.timezone || 'UTC'
+      timezone: w.timezone || tzFallback
     });
   });
   const exceptionsByDate = new Map();
@@ -183,7 +186,7 @@ function generateSlotsFromRules(opts) {
     const weeklyDay = weeklyByDay.get(dayOfWeek) || {
       allDay: false,
       slots: [],
-      timezone: weeklyAvailability[0]?.timezone || 'UTC'
+      timezone: weeklyAvailability[0]?.timezone || tzFallback
     };
     const exception = exceptionsByDate.get(dateStr) || null;
 

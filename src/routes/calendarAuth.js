@@ -146,6 +146,7 @@ router.get('/calendar/callback', async (req, res, next) => {
     }
 
     let calendarAccountEmail = null;
+    let calendarTimezone = null;
     try {
       oauth2Client.setCredentials(tokens);
       const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
@@ -155,6 +156,16 @@ router.get('/calendar/callback', async (req, res, next) => {
       }
     } catch (emailErr) {
       logger.warn('Google Calendar: could not fetch account email', { message: emailErr.message });
+    }
+
+    try {
+      const calendarApi = google.calendar({ version: 'v3', auth: oauth2Client });
+      const calInfo = await calendarApi.calendars.get({ calendarId: 'primary' });
+      if (calInfo.data && calInfo.data.timeZone) {
+        calendarTimezone = calInfo.data.timeZone;
+      }
+    } catch (tzErr) {
+      logger.warn('Google Calendar: could not fetch calendar timezone', { message: tzErr.message });
     }
 
     let integration = await Integration.findOne({ owner: appId });
@@ -179,7 +190,8 @@ router.get('/calendar/callback', async (req, res, next) => {
         googleCalendarConnected: true,
         calendarProvider: PROVIDER_GOOGLE,
         googleCalendarCalendarId: 'primary',
-        calendarAccountEmail: calendarAccountEmail || null
+        calendarAccountEmail: calendarAccountEmail || null,
+        googleCalendarTimezone: calendarTimezone || null
       },
       { new: true }
     );
@@ -212,7 +224,8 @@ router.delete('/apps/:appId/calendar', authenticateToken, verifyAppOwnership, as
         googleCalendarRefreshToken: null,
         googleCalendarConnected: false,
         calendarProvider: null,
-        calendarAccountEmail: null
+        calendarAccountEmail: null,
+        googleCalendarTimezone: null
       },
       { new: true }
     );

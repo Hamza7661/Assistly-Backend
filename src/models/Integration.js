@@ -118,6 +118,13 @@ const integrationSchema = new mongoose.Schema({
     trim: true,
     maxlength: 255
   },
+  /** IANA timezone of the connected Google Calendar (e.g. 'Asia/Karachi'). Fetched at connect time. */
+  googleCalendarTimezone: {
+    type: String,
+    default: null,
+    trim: true,
+    maxlength: 100
+  },
   /** Slot length in minutes for calendar availability (15, 30, or 60). Used when returning free slots to chatbot. */
   calendarSlotMinutes: {
     type: Number,
