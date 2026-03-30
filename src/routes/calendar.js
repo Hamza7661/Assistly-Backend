@@ -17,7 +17,7 @@ const router = express.Router();
  */
 async function getProviderForApp(appId) {
   const integration = await Integration.findOne({ owner: appId })
-    .select('googleCalendarConnected calendarProvider googleCalendarRefreshToken googleCalendarCalendarId calendarSlotMinutes')
+    .select('googleCalendarConnected calendarProvider googleCalendarRefreshToken googleCalendarCalendarId calendarSlotMinutes googleCalendarTimezone')
     .lean()
     .exec();
 
@@ -100,19 +100,23 @@ router.get('/apps/:appId/availability', verifySignedThirdPartyForParamUser, asyn
       baseViewModel = availabilityNotConnectedOrError({ message: 'No calendar connected for this app.' });
     }
 
+    const calendarTimezone = integration?.googleCalendarTimezone || null;
+
     const freeSlots = generateSlotsFromRules({
       timeMin,
       timeMax,
       weeklyAvailability,
       exceptions,
       providerBusy,
-      slotMinutes
+      slotMinutes,
+      defaultTimezone: calendarTimezone
     });
 
     const viewModel = {
       ...baseViewModel,
       freeSlots,
-      calendarConnected: !!provider
+      calendarConnected: !!provider,
+      calendarTimezone
     };
 
     res.status(200).json({
