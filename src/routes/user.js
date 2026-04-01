@@ -610,6 +610,9 @@ class UserController {
         conversationStyle: integration.conversationStyle || false,
         googleReviewEnabled: !!integration.googleReviewEnabled,
         googleReviewUrl: integration.googleReviewUrl || null,
+        calendarConnected: !!integration.googleCalendarConnected,
+        calendarSlotMinutes: integration.calendarSlotMinutes ?? 30,
+        calendarTimezone: integration.googleCalendarTimezone || null,
         leadTypeMessages: integration.leadTypeMessages || []
       } : {
         assistantName: 'Assistant',
@@ -620,6 +623,9 @@ class UserController {
         conversationStyle: false,
         googleReviewEnabled: false,
         googleReviewUrl: null,
+        calendarConnected: false,
+        calendarSlotMinutes: 30,
+        calendarTimezone: null,
         leadTypeMessages: []
       };
 
@@ -902,6 +908,9 @@ class UserController {
         conversationStyle: integration.conversationStyle || false,
         googleReviewEnabled: !!integration.googleReviewEnabled,
         googleReviewUrl: integration.googleReviewUrl || null,
+        calendarConnected: !!integration.googleCalendarConnected,
+        calendarSlotMinutes: integration.calendarSlotMinutes ?? 30,
+        calendarTimezone: integration.googleCalendarTimezone || null,
         leadTypeMessages: integration.leadTypeMessages || []
       } : {
         assistantName: 'Assistant',
@@ -912,6 +921,9 @@ class UserController {
         conversationStyle: false,
         googleReviewEnabled: false,
         googleReviewUrl: null,
+        calendarConnected: false,
+        calendarSlotMinutes: 30,
+        calendarTimezone: null,
         leadTypeMessages: []
       };
 

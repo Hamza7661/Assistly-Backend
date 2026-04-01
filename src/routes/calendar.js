@@ -172,18 +172,21 @@ router.post('/apps/:appId/appointments', verifySignedThirdPartyForParamUser, asy
         const app = await App.findById(appId).select('owner name').lean().exec();
         const owner = app?.owner ? await User.findById(app.owner).select('email firstName lastName').lean().exec() : null;
         const integration = await Integration.findOne({ owner: appId })
-          .select('assistantName primaryColor chatbotImage')
+          .select('assistantName companyName primaryColor chatbotImage')
           .lean()
           .exec();
         const emailService = new EmailService();
         const logoUrl = integration?.chatbotImage?.filename
           ? `${process.env.NEXT_PUBLIC_API_URL || ''}/api/v1/integration/public/apps/${appId}/chatbot-image`
           : '';
+        // companyName is the real business brand (e.g. "Facelism"); assistantName is the bot persona (e.g. "Assistant")
+        const resolvedCompanyName = integration?.companyName || app?.name || 'Business';
         const businessData = {
-          name: integration?.assistantName || app?.name || 'Business',
+          companyName: resolvedCompanyName,
+          name: resolvedCompanyName,
           email: 'socialaliafzal@gmail.com',
           primaryColor: integration?.primaryColor || '#c01721',
-          logoUrl
+          logoUrl,
         };
         const appointmentData = {
           serviceName: title,
