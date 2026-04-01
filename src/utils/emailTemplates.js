@@ -72,13 +72,15 @@ const DEFAULT_THEME = {
 function getCompanyTheme(companyName, overrides = {}) {
   const key = (companyName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const base = COMPANY_THEMES[key] || {};
+  // If the company theme explicitly uses text logo, don't let a DB logoUrl override it
+  const logoUrl = base.logoMode === 'text' ? '' : (overrides.logoUrl || '');
   return {
     ...DEFAULT_THEME,
     ...base,
     // DB-driven values always win over static theme values
     primaryColor: overrides.primaryColor || base.primaryColor || DEFAULT_THEME.primaryColor,
     headerGradient: base.headerGradient || `linear-gradient(135deg, ${overrides.primaryColor || DEFAULT_THEME.primaryColor} 0%, ${overrides.primaryColor || DEFAULT_THEME.primaryColor}cc 100%)`,
-    logoUrl: overrides.logoUrl || '',
+    logoUrl,
     companyName: companyName || 'Our Team',
   };
 }
@@ -105,11 +107,17 @@ function _divider(theme) {
 
 function _footer(theme, platformName) {
   const platform = platformName || process.env.FROM_NAME || 'UpZilo';
+  const upziloLogoUrl = 'https://upzilo.com/wp-content/uploads/2025/07/UpZilo_Logo-scaled.png';
+  const upziloLink = 'https://upzilo.com';
   return `
     <div style="background:${theme.footerBg};padding:18px 24px;text-align:center;">
       ${theme.tagline ? `<p style="color:${theme.footerTextColor};font-size:12px;letter-spacing:0.15em;margin:0 0 6px;text-transform:uppercase;">${theme.tagline}</p>` : ''}
       <p style="color:${theme.footerTextColor};font-size:11px;margin:0;opacity:0.7;">
-        Powered by <strong>${platform}</strong> &nbsp;|&nbsp; This is an automated message, please do not reply.
+        Powered by&nbsp;
+        <a href="${upziloLink}" target="_blank" style="text-decoration:none;display:inline-block;vertical-align:middle;">
+          <img src="${upziloLogoUrl}" alt="${platform}" style="height:18px;object-fit:contain;display:inline-block;vertical-align:middle;" />
+        </a>
+        &nbsp;|&nbsp; This is an automated message, please do not reply.
       </p>
     </div>`;
 }
