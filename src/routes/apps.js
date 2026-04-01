@@ -1368,6 +1368,7 @@ class AppController {
         googleReviewUrl: integration.googleReviewUrl || null,
         calendarConnected: !!integration.googleCalendarConnected,
         calendarSlotMinutes: integration.calendarSlotMinutes ?? 30,
+        calendarTimezone: integration.googleCalendarTimezone || null,
         leadTypeMessages: integration.leadTypeMessages || []
       } : {
         ...getDefaultIntegrationConfig(),
@@ -1581,6 +1582,7 @@ class AppController {
         googleReviewUrl: integration.googleReviewUrl || null,
         calendarConnected: !!integration.googleCalendarConnected,
         calendarSlotMinutes: integration.calendarSlotMinutes ?? 30,
+        calendarTimezone: integration.googleCalendarTimezone || null,
         leadTypeMessages: integration.leadTypeMessages || []
       } : {
         ...getDefaultIntegrationConfig(),

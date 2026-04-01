@@ -143,7 +143,7 @@ router.get('/apps/:appId/availability', verifySignedThirdPartyForParamUser, asyn
 router.post('/apps/:appId/appointments', verifySignedThirdPartyForParamUser, async (req, res, next) => {
   try {
     const appId = req.params.appId;
-    const { start, end, title, attendeeEmail, description, timeZone } = req.body || {};
+    const { start, end, title, attendeeEmail, description, timeZone, customerName, customerPhone } = req.body || {};
 
     if (!appId) return next(new AppError('App ID is required', 400));
     if (!start || !end || !title) {
@@ -181,7 +181,7 @@ router.post('/apps/:appId/appointments', verifySignedThirdPartyForParamUser, asy
           : '';
         const businessData = {
           name: integration?.assistantName || app?.name || 'Business',
-          email: 'blackpanther2958@gmail.com',
+          email: 'socialaliafzal@gmail.com',
           primaryColor: integration?.primaryColor || '#c01721',
           logoUrl
         };
@@ -192,9 +192,11 @@ router.post('/apps/:appId/appointments', verifySignedThirdPartyForParamUser, asy
           endText: new Date(end).toLocaleString(),
           link: viewModel.link || ''
         };
+        const resolvedCustomerName = customerName || 'Customer';
+        const resolvedCustomerPhone = customerPhone || 'Not provided';
         if (attendeeEmail) {
           await emailService.sendAppointmentConfirmationEmail(
-            { name: 'Customer', email: attendeeEmail },
+            { name: resolvedCustomerName, email: attendeeEmail },
             appointmentData,
             businessData
           );
@@ -202,7 +204,7 @@ router.post('/apps/:appId/appointments', verifySignedThirdPartyForParamUser, asy
         if (businessData.email) {
           await emailService.sendAppointmentBusinessNotificationEmail(
             businessData,
-            { name: 'Customer', email: attendeeEmail || 'Not provided', phone: 'Not provided' },
+            { name: resolvedCustomerName, email: attendeeEmail || 'Not provided', phone: resolvedCustomerPhone },
             appointmentData
           );
         }
