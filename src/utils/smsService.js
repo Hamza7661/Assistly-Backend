@@ -39,7 +39,7 @@ class SmsService {
     const formattedNumber = phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}`;
 
     // Create SMS message
-    const message = `Your verification code is: ${otp}. This code will expire in 10 minutes. - ${process.env.FROM_NAME || 'Assistly'}`;
+    const message = `Your verification code is: ${otp}. This code will expire in 10 minutes. - ${process.env.FROM_NAME || 'UpZilo'}`;
 
     try {
       logger.info('Sending OTP SMS', { phoneNumber: formattedNumber });
