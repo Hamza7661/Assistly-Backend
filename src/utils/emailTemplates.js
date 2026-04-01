@@ -107,17 +107,12 @@ function _divider(theme) {
 
 function _footer(theme, platformName) {
   const platform = platformName || process.env.FROM_NAME || 'UpZilo';
-  const upziloLogoUrl = 'https://upzilo.com/wp-content/uploads/2025/07/UpZilo_Logo-scaled.png';
   const upziloLink = 'https://upzilo.com';
   return `
     <div style="background:${theme.footerBg};padding:18px 24px;text-align:center;">
       ${theme.tagline ? `<p style="color:${theme.footerTextColor};font-size:12px;letter-spacing:0.15em;margin:0 0 6px;text-transform:uppercase;">${theme.tagline}</p>` : ''}
       <p style="color:${theme.footerTextColor};font-size:11px;margin:0;opacity:0.7;">
-        Powered by&nbsp;
-        <a href="${upziloLink}" target="_blank" style="text-decoration:none;display:inline-block;vertical-align:middle;">
-          <img src="${upziloLogoUrl}" alt="${platform}" style="height:18px;object-fit:contain;display:inline-block;vertical-align:middle;" />
-        </a>
-        &nbsp;|&nbsp; This is an automated message, please do not reply.
+        Powered by&nbsp;<a href="${upziloLink}" target="_blank" style="color:${theme.footerTextColor};font-weight:700;text-decoration:none;letter-spacing:0.04em;">${platform}</a>&nbsp;|&nbsp; This is an automated message, please do not reply.
       </p>
     </div>`;
 }
