@@ -234,11 +234,16 @@ class UserController {
         if (w.isRoot || !w.workflowGroupId) {
           // This is a root workflow
           const groupId = w._id.toString();
-          workflowMap[groupId] = {
-            ...workflowData,
-            questions: [] // Will contain ordered questions
-          };
-          rootWorkflows.push(workflowMap[groupId]);
+          if (workflowMap[groupId]) {
+            // Children were already collected before this root doc was processed
+            // (root has a higher order value). Update metadata but keep questions.
+            const existingQuestions = workflowMap[groupId].questions || [];
+            workflowMap[groupId] = { ...workflowData, questions: existingQuestions };
+            // Already in rootWorkflows - do NOT push again
+          } else {
+            workflowMap[groupId] = { ...workflowData, questions: [] };
+            rootWorkflows.push(workflowMap[groupId]);
+          }
         } else {
           // This is a question within a workflow
           const groupId = w.workflowGroupId ? w.workflowGroupId.toString() : w._id.toString();
@@ -499,8 +504,16 @@ class UserController {
 
         if (w.isRoot || !w.workflowGroupId) {
           const groupId = w._id.toString();
-          workflowMap[groupId] = { ...workflowData, questions: [] };
-          rootWorkflows.push(workflowMap[groupId]);
+          if (workflowMap[groupId]) {
+            // Children were already collected before this root doc was processed
+            // (root has a higher order value). Update metadata but keep questions.
+            const existingQuestions = workflowMap[groupId].questions || [];
+            workflowMap[groupId] = { ...workflowData, questions: existingQuestions };
+            // Already in rootWorkflows — do NOT push again
+          } else {
+            workflowMap[groupId] = { ...workflowData, questions: [] };
+            rootWorkflows.push(workflowMap[groupId]);
+          }
         } else {
           const groupId = w.workflowGroupId ? w.workflowGroupId.toString() : w._id.toString();
           if (!workflowMap[groupId]) {
@@ -763,11 +776,16 @@ class UserController {
         if (w.isRoot || !w.workflowGroupId) {
           // This is a root workflow
           const groupId = w._id.toString();
-          workflowMap[groupId] = {
-            ...workflowData,
-            questions: [] // Will contain ordered questions
-          };
-          rootWorkflows.push(workflowMap[groupId]);
+          if (workflowMap[groupId]) {
+            // Children were already collected before this root doc was processed
+            // (root has a higher order value). Update metadata but keep questions.
+            const existingQuestions = workflowMap[groupId].questions || [];
+            workflowMap[groupId] = { ...workflowData, questions: existingQuestions };
+            // Already in rootWorkflows - do NOT push again
+          } else {
+            workflowMap[groupId] = { ...workflowData, questions: [] };
+            rootWorkflows.push(workflowMap[groupId]);
+          }
         } else {
           // This is a question within a workflow
           const groupId = w.workflowGroupId ? w.workflowGroupId.toString() : w._id.toString();
