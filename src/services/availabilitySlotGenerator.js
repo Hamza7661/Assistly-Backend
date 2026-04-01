@@ -181,6 +181,11 @@ function generateSlotsFromRules(opts) {
 
   const tzFallback = defaultTimezone || 'UTC';
 
+  // When no availability rules are configured at all, use a sensible default
+  // business-hours schedule (Mon–Sun, 09:00–17:00) rather than showing nothing.
+  const hasRules = Array.isArray(weeklyAvailability) && weeklyAvailability.length > 0;
+  const DEFAULT_BUSINESS_SLOT = [{ start: '09:00', end: '17:00' }];
+
   const weeklyByDay = new Map();
   (weeklyAvailability || []).forEach((w) => {
     weeklyByDay.set(w.dayOfWeek, {
@@ -213,7 +218,7 @@ function generateSlotsFromRules(opts) {
     const dayOfWeek = current.getUTCDay();
     const weeklyDay = weeklyByDay.get(dayOfWeek) || {
       allDay: false,
-      slots: [],
+      slots: hasRules ? [] : DEFAULT_BUSINESS_SLOT,
       timezone: weeklyAvailability[0]?.timezone || tzFallback
     };
     const exception = exceptionsByDate.get(dateStr) || null;

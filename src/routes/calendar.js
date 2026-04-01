@@ -172,7 +172,7 @@ router.post('/apps/:appId/appointments', verifySignedThirdPartyForParamUser, asy
         const app = await App.findById(appId).select('owner name').lean().exec();
         const owner = app?.owner ? await User.findById(app.owner).select('email firstName lastName').lean().exec() : null;
         const integration = await Integration.findOne({ owner: appId })
-          .select('assistantName companyName primaryColor chatbotImage')
+          .select('assistantName companyName primaryColor chatbotImage googleCalendarTimezone')
           .lean()
           .exec();
         const emailService = new EmailService();
@@ -188,11 +188,28 @@ router.post('/apps/:appId/appointments', verifySignedThirdPartyForParamUser, asy
           primaryColor: integration?.primaryColor || '#c01721',
           logoUrl,
         };
+        const calTz = integration?.googleCalendarTimezone || 'UTC';
+        const formatInCalTz = (isoStr) => {
+          try {
+            return new Date(isoStr).toLocaleString('en-US', {
+              timeZone: calTz,
+              weekday: 'short',
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true,
+            });
+          } catch {
+            return new Date(isoStr).toLocaleString();
+          }
+        };
         const appointmentData = {
           serviceName: title,
           title,
-          startText: new Date(start).toLocaleString(),
-          endText: new Date(end).toLocaleString(),
+          startText: formatInCalTz(start),
+          endText: formatInCalTz(end),
           link: viewModel.link || ''
         };
         const resolvedCustomerName = customerName || 'Customer';
