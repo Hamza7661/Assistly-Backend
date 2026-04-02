@@ -144,7 +144,7 @@ router.get('/apps/:appId/availability', verifySignedThirdPartyForParamUser, asyn
 router.post('/apps/:appId/appointments', verifySignedThirdPartyForParamUser, async (req, res, next) => {
   try {
     const appId = req.params.appId;
-    const { start, end, title, attendeeEmail, description, timeZone, customerName, customerPhone, leadId } = req.body || {};
+    const { start, end, title, attendeeEmail, description, timeZone, customerName, customerPhone, leadId, postBookingNote } = req.body || {};
 
     if (!appId) return next(new AppError('App ID is required', 400));
     if (!start || !end || !title) {
@@ -211,7 +211,8 @@ router.post('/apps/:appId/appointments', verifySignedThirdPartyForParamUser, asy
           title,
           startText: formatInCalTz(start),
           endText: formatInCalTz(end),
-          link: viewModel.link || ''
+          link: viewModel.link || '',
+          postBookingNote: postBookingNote || ''
         };
         const resolvedCustomerName = customerName || 'Customer';
         const resolvedCustomerPhone = customerPhone || 'Not provided';

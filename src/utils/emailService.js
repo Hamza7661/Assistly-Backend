@@ -242,6 +242,7 @@ class EmailService {
     const startText = appointmentData?.startText || '';
     const endText = appointmentData?.endText || '';
     const calendarLink = appointmentData?.link || '';
+    const postBookingNote = appointmentData?.postBookingNote || '';
 
     const theme = getCompanyTheme(companyName, {
       primaryColor: businessData?.primaryColor,
@@ -254,6 +255,7 @@ class EmailService {
       startText,
       endText,
       calendarLink,
+      postBookingNote,
       theme,
     });
 
