@@ -152,20 +152,26 @@ function _customerConfirmationHeader(theme) {
     </div>`;
 }
 
+/** Official UpZilo mark for business booking alerts (hotlink or override via UPZILO_EMAIL_LOGO_URL). */
+const UPZILO_BUSINESS_EMAIL_LOGO_DEFAULT =
+  'https://upzilo.com/wp-content/uploads/2025/07/UpZilo_Logo-scaled.png';
+
 function _platformBusinessHeader(notifyIcon) {
   const platformName = process.env.FROM_NAME || 'UpZilo';
-  const logoUrl = resolveFrontendAssetUrl('/upzilo-logo.png');
-  const logoHtml = logoUrl
-    ? `<img src="${logoUrl}" alt="${platformName}" style="height:38px;max-width:220px;object-fit:contain;display:block;margin-bottom:12px;" />`
-    : `<span style="font-family:Arial,Helvetica,sans-serif;font-size:22px;font-weight:800;letter-spacing:0.08em;color:#ffffff;display:inline-block;margin-bottom:10px;">${platformName}</span>`;
-  const gradient = 'linear-gradient(135deg, #0f172a 0%, #334155 100%)';
+  const logoUrl =
+    (process.env.UPZILO_EMAIL_LOGO_URL && String(process.env.UPZILO_EMAIL_LOGO_URL).trim()) ||
+    UPZILO_BUSINESS_EMAIL_LOGO_DEFAULT;
+  const logoHtml = `<img src="${logoUrl}" alt="${platformName}" style="height:48px;max-width:260px;width:auto;object-fit:contain;display:block;margin-bottom:14px;" />`;
+  const headerBg =
+    process.env.UPZILO_BUSINESS_EMAIL_HEADER_BG ||
+    'linear-gradient(180deg, #fff5f5 0%, #ffe4e6 45%, #fecdd3 100%)';
   return `
-    <div style="background:${gradient};padding:24px;text-align:left;">
+    <div style="background:${headerBg};padding:26px 24px;text-align:left;border-bottom:1px solid #fda4af;">
       ${logoHtml}
-      <h1 style="color:#ffffff;margin:12px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:20px;font-weight:700;">
+      <h1 style="color:#7f1d1d;margin:10px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:20px;font-weight:700;">
         ${notifyIcon} New Appointment Booked
       </h1>
-      <p style="color:rgba(255,255,255,0.72);margin:8px 0 0;font-size:12px;line-height:1.5;">
+      <p style="color:#57534e;margin:8px 0 0;font-size:12px;line-height:1.55;">
         A client booked through your UpZilo assistant. Details below.
       </p>
     </div>`;
