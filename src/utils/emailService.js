@@ -37,7 +37,9 @@ class EmailService {
         htmlContent,
         textContent,
         dynamicTemplateData,
-        templateId
+        templateId,
+        fromName,
+        fromEmail,
       } = emailData;
 
       // Validate required fields
@@ -45,11 +47,17 @@ class EmailService {
         throw new Error('to, subject, and htmlContent are required');
       }
 
+      const resolvedFromName =
+        fromName !== undefined && fromName !== null && String(fromName).trim() !== ''
+          ? String(fromName).trim()
+          : process.env.FROM_NAME;
+      const resolvedFromEmail = (fromEmail && String(fromEmail).trim()) || process.env.FROM_EMAIL;
+
       const msg = {
         to,
         from: {
-          name: process.env.FROM_NAME,
-          email: process.env.FROM_EMAIL
+          name: resolvedFromName,
+          email: resolvedFromEmail
         },
         subject,
         html: htmlContent,
@@ -264,6 +272,8 @@ class EmailService {
       subject: `Appointment Confirmed – ${serviceName} | ${companyName}`,
       htmlContent,
       textContent: `Hi ${customerName}, your ${serviceName} appointment with ${companyName} is confirmed for ${startText}. We look forward to seeing you!`,
+      // In inbox, show the business brand (e.g. "Facelism") when SendGrid allows this display name on your domain.
+      fromName: companyName,
     });
   }
 
@@ -297,11 +307,17 @@ class EmailService {
       theme,
     });
 
+    const alertFromName =
+      process.env.BOOKING_ALERT_FROM_NAME ||
+      process.env.FROM_NAME ||
+      'UpZilo';
+
     return this.sendEmail({
       to: businessEmail,
       subject: `New Appointment – ${serviceName} (${customerName})`,
       htmlContent,
       textContent: `New appointment booked: ${serviceName} at ${startText}. Customer: ${customerName} | ${customerEmail} | ${customerPhone}.`,
+      fromName: alertFromName,
     });
   }
 
