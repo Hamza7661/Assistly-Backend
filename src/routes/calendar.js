@@ -6,6 +6,7 @@ const { Availability } = require('../models/Availability');
 const { AvailabilityException } = require('../models/AvailabilityException');
 const { App } = require('../models/App');
 const { User } = require('../models/User');
+const { Lead } = require('../models/Lead');
 const { getAppointmentSchedulerProvider, PROVIDER_GOOGLE } = require('../integrations/appointment/appointmentSchedulerFactory');
 const { availabilitySuccess, availabilityNotConnectedOrError } = require('../integrations/appointment/commonViewModel');
 const { generateSlotsFromRules, isAllowedSlotMinutes } = require('../services/availabilitySlotGenerator');
@@ -143,7 +144,7 @@ router.get('/apps/:appId/availability', verifySignedThirdPartyForParamUser, asyn
 router.post('/apps/:appId/appointments', verifySignedThirdPartyForParamUser, async (req, res, next) => {
   try {
     const appId = req.params.appId;
-    const { start, end, title, attendeeEmail, description, timeZone, customerName, customerPhone } = req.body || {};
+    const { start, end, title, attendeeEmail, description, timeZone, customerName, customerPhone, leadId } = req.body || {};
 
     if (!appId) return next(new AppError('App ID is required', 400));
     if (!start || !end || !title) {
@@ -214,12 +215,14 @@ router.post('/apps/:appId/appointments', verifySignedThirdPartyForParamUser, asy
         };
         const resolvedCustomerName = customerName || 'Customer';
         const resolvedCustomerPhone = customerPhone || 'Not provided';
+        let confirmationEmailSent = false;
         if (attendeeEmail) {
           await emailService.sendAppointmentConfirmationEmail(
             { name: resolvedCustomerName, email: attendeeEmail },
             appointmentData,
             businessData
           );
+          confirmationEmailSent = true;
         }
         if (businessData.email) {
           await emailService.sendAppointmentBusinessNotificationEmail(
@@ -227,6 +230,52 @@ router.post('/apps/:appId/appointments', verifySignedThirdPartyForParamUser, asy
             { name: resolvedCustomerName, email: attendeeEmail || 'Not provided', phone: resolvedCustomerPhone },
             appointmentData
           );
+        }
+
+        // If customer confirmation email was sent successfully, mark the initiating lead as confirmed.
+        if (confirmationEmailSent) {
+          try {
+            const patch = {
+              status: 'confirmed',
+              appointmentDetails: {
+                eventId: viewModel.eventId || null,
+                start: start ? new Date(start) : null,
+                end: end ? new Date(end) : null,
+                link: viewModel.link || '',
+                confirmed: true
+              }
+            };
+
+            // Preferred: leadId provided by AI/widget.
+            let lead = null;
+            if (leadId) {
+              lead = await Lead.findById(leadId);
+            }
+
+            // Fallback: try to resolve lead by app + email/phone within recent window.
+            if (!lead) {
+              const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+              const or = [];
+              if (attendeeEmail) or.push({ leadEmail: String(attendeeEmail).toLowerCase() });
+              if (customerPhone) or.push({ leadPhoneNumber: String(customerPhone) });
+              if (or.length > 0) {
+                lead = await Lead.findOne({
+                  appId,
+                  createdAt: { $gte: cutoff },
+                  $or: or
+                }).sort({ createdAt: -1 });
+              }
+            }
+
+            if (lead) {
+              Object.assign(lead, patch);
+              await lead.save();
+            } else {
+              logger.warn('Booking confirmation email sent, but no lead was found to confirm', { appId, leadId: leadId || null });
+            }
+          } catch (leadErr) {
+            logger.error('Failed to update lead to confirmed after booking', { appId, leadId: leadId || null, error: leadErr.message });
+          }
         }
       } catch (emailErr) {
         logger.error('Calendar booking email sending failed', { appId, error: emailErr.message });
