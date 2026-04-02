@@ -1,9 +1,22 @@
 'use strict';
 
+const { logger } = require('./logger');
+
+/**
+ * Absolute URL for static assets on the web app (logos). Set FRONTEND_URL in the API .env
+ * (e.g. https://app.example.com) so confirmation emails can load images.
+ */
+function resolveFrontendAssetUrl(path) {
+  if (!path) return '';
+  if (/^https?:\/\//i.test(path)) return path;
+  const base = (process.env.FRONTEND_URL || process.env.CLIENT_APP_URL || '').replace(/\/$/, '');
+  if (!base) return '';
+  return `${base}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
 /**
  * Company theme registry.
  * Keys must be lowercase, no spaces (normalized from companyName).
- * Add a new entry here to brand emails for any company.
  */
 const COMPANY_THEMES = {
   facelism: {
@@ -14,7 +27,15 @@ const COMPANY_THEMES = {
     fontFamily: "'Georgia', 'Times New Roman', serif",
     bodyFontFamily: "'Arial', 'Helvetica', sans-serif",
     borderRadius: '0px',
-    logoMode: 'text',                // 'text' | 'image'
+    logoMode: 'image',
+    /** Served from the frontend public folder */
+    emailLogoPath: '/branding/facelism-logo.png',
+    logoHeightPx: 52,
+    /** Customer confirmation: real logo is black on white */
+    customerEmailHeaderBg: '#ffffff',
+    customerEmailHeaderTitleColor: '#111827',
+    customerEmailHeaderTaglineColor: '#6b7280',
+    customerEmailHeaderBorderBottom: '3px solid #C9A96E',
     logoTextStyle: [
       'display:inline-block',
       'letter-spacing:0.3em',
@@ -33,14 +54,6 @@ const COMPANY_THEMES = {
     confirmIcon: '✨',
     notifyIcon: '📋',
   },
-
-  // ── Add more companies below ─────────────────────────────────────────────
-  // example: {
-  //   primaryColor: '#1e40af',
-  //   accentColor:  '#3b82f6',
-  //   headerGradient: 'linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%)',
-  //   ...
-  // },
 };
 
 const DEFAULT_THEME = {
@@ -64,37 +77,98 @@ const DEFAULT_THEME = {
 };
 
 /**
- * Resolve the theme for a given company name.
- * Falls back to DEFAULT_THEME for unknown companies.
  * @param {string} companyName
  * @param {{ primaryColor?: string, logoUrl?: string }} overrides  – live values from DB
  */
 function getCompanyTheme(companyName, overrides = {}) {
   const key = (companyName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const base = COMPANY_THEMES[key] || {};
-  // If the company theme explicitly uses text logo, don't let a DB logoUrl override it
-  const logoUrl = base.logoMode === 'text' ? '' : (overrides.logoUrl || '');
+
+  let logoUrl = '';
+  if (base.emailLogoPath) {
+    logoUrl = resolveFrontendAssetUrl(base.emailLogoPath);
+    if (!logoUrl && key === 'facelism') {
+      logger.warn(
+        'Facelism email logo URL is empty — set FRONTEND_URL in the API .env to your live web app origin (e.g. https://app.example.com) so /branding/facelism-logo.png can load in emails.'
+      );
+    }
+  } else if (base.logoMode === 'text') {
+    logoUrl = '';
+  } else {
+    logoUrl = overrides.logoUrl || '';
+  }
+
   return {
     ...DEFAULT_THEME,
     ...base,
-    // DB-driven values always win over static theme values
     primaryColor: overrides.primaryColor || base.primaryColor || DEFAULT_THEME.primaryColor,
-    headerGradient: base.headerGradient || `linear-gradient(135deg, ${overrides.primaryColor || DEFAULT_THEME.primaryColor} 0%, ${overrides.primaryColor || DEFAULT_THEME.primaryColor}cc 100%)`,
+    headerGradient:
+      base.headerGradient ||
+      `linear-gradient(135deg, ${overrides.primaryColor || DEFAULT_THEME.primaryColor} 0%, ${overrides.primaryColor || DEFAULT_THEME.primaryColor}cc 100%)`,
     logoUrl,
     companyName: companyName || 'Our Team',
   };
 }
 
-// ── HTML snippet helpers ─────────────────────────────────────────────────────
-
-function _logoHtml(theme) {
+function _logoHtml(theme, { forLightHeader = false } = {}) {
   if (theme.logoUrl) {
-    return `<img src="${theme.logoUrl}" alt="${theme.companyName}" style="height:44px;object-fit:contain;display:block;margin-bottom:8px;" />`;
+    const h = theme.logoHeightPx || 44;
+    const center = forLightHeader ? 'margin-left:auto;margin-right:auto;' : '';
+    return `<img src="${theme.logoUrl}" alt="${theme.companyName}" style="height:${h}px;max-width:280px;object-fit:contain;display:block;${center}margin-bottom:12px;" />`;
   }
   if (theme.logoMode === 'text') {
-    return `<span style="${theme.logoTextStyle};color:${theme.headerTextColor};">${theme.companyName.toUpperCase()}</span>`;
+    const color = forLightHeader
+      ? theme.customerEmailHeaderTitleColor || '#111827'
+      : theme.headerTextColor;
+    return `<span style="${theme.logoTextStyle};color:${color};">${(theme.companyName || '').toUpperCase()}</span>`;
   }
-  return `<span style="font-size:20px;font-weight:700;color:${theme.headerTextColor};">${theme.companyName}</span>`;
+  return `<span style="font-size:20px;font-weight:700;color:${forLightHeader ? '#111827' : theme.headerTextColor};">${theme.companyName}</span>`;
+}
+
+function _customerConfirmationHeader(theme) {
+  const useLight = !!theme.customerEmailHeaderBg;
+  const bg = useLight ? theme.customerEmailHeaderBg : theme.headerGradient;
+  const titleColor = useLight
+    ? theme.customerEmailHeaderTitleColor || theme.headerTextColor
+    : theme.headerTextColor;
+  const taglineColor = useLight
+    ? theme.customerEmailHeaderTaglineColor || titleColor
+    : theme.headerTextColor;
+  const taglineStyle = useLight
+    ? `color:${taglineColor};margin:0;font-size:13px;letter-spacing:0.1em;`
+    : `color:${taglineColor};opacity:0.85;margin:0;font-size:13px;letter-spacing:0.1em;`;
+  const border =
+    useLight && theme.customerEmailHeaderBorderBottom
+      ? `border-bottom:${theme.customerEmailHeaderBorderBottom};`
+      : '';
+
+  return `
+    <div style="background:${bg};padding:28px 24px;text-align:center;${border}">
+      ${_logoHtml(theme, { forLightHeader: useLight })}
+      <h1 style="color:${titleColor};margin:14px 0 4px;font-family:${theme.fontFamily};font-size:22px;font-weight:700;letter-spacing:0.05em;">
+        ${theme.confirmIcon} Appointment Confirmed
+      </h1>
+      ${theme.tagline ? `<p style="${taglineStyle}">${theme.tagline}</p>` : ''}
+    </div>`;
+}
+
+function _platformBusinessHeader(notifyIcon) {
+  const platformName = process.env.FROM_NAME || 'UpZilo';
+  const logoUrl = resolveFrontendAssetUrl('/upzilo-logo.png');
+  const logoHtml = logoUrl
+    ? `<img src="${logoUrl}" alt="${platformName}" style="height:38px;max-width:220px;object-fit:contain;display:block;margin-bottom:12px;" />`
+    : `<span style="font-family:Arial,Helvetica,sans-serif;font-size:22px;font-weight:800;letter-spacing:0.08em;color:#ffffff;display:inline-block;margin-bottom:10px;">${platformName}</span>`;
+  const gradient = 'linear-gradient(135deg, #0f172a 0%, #334155 100%)';
+  return `
+    <div style="background:${gradient};padding:24px;text-align:left;">
+      ${logoHtml}
+      <h1 style="color:#ffffff;margin:12px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:20px;font-weight:700;">
+        ${notifyIcon} New Appointment Booked
+      </h1>
+      <p style="color:rgba(255,255,255,0.72);margin:8px 0 0;font-size:12px;line-height:1.5;">
+        A client booked through your UpZilo assistant. Details below.
+      </p>
+    </div>`;
 }
 
 function _button(href, label, theme) {
@@ -117,8 +191,6 @@ function _footer(theme, platformName) {
     </div>`;
 }
 
-// ── Customer confirmation email ──────────────────────────────────────────────
-
 /**
  * Build HTML for appointment confirmation sent TO the customer.
  */
@@ -131,14 +203,7 @@ function buildCustomerConfirmationHtml({
   postBookingNote,
   theme,
 }) {
-  const header = `
-    <div style="background:${theme.headerGradient};padding:28px 24px;text-align:center;">
-      ${_logoHtml(theme)}
-      <h1 style="color:${theme.headerTextColor};margin:14px 0 4px;font-family:${theme.fontFamily};font-size:22px;font-weight:700;letter-spacing:0.05em;">
-        ${theme.confirmIcon} Appointment Confirmed
-      </h1>
-      ${theme.tagline ? `<p style="color:${theme.headerTextColor};opacity:0.85;margin:0;font-size:13px;letter-spacing:0.1em;">${theme.tagline}</p>` : ''}
-    </div>`;
+  const header = _customerConfirmationHeader(theme);
 
   const body = `
     <div style="padding:28px 28px 8px;font-family:${theme.bodyFontFamily};color:#1f2937;line-height:1.6;">
@@ -174,10 +239,8 @@ function buildCustomerConfirmationHtml({
   return _wrapEmail(header, body, theme);
 }
 
-// ── Business notification email ──────────────────────────────────────────────
-
 /**
- * Build HTML for new appointment notification sent TO the business.
+ * Build HTML for new appointment notification sent TO the business (UpZilo-branded header).
  */
 function buildBusinessNotificationHtml({
   businessName,
@@ -190,13 +253,7 @@ function buildBusinessNotificationHtml({
   calendarLink,
   theme,
 }) {
-  const header = `
-    <div style="background:${theme.headerGradient};padding:24px;text-align:left;">
-      ${_logoHtml(theme)}
-      <h1 style="color:${theme.headerTextColor};margin:12px 0 0;font-family:${theme.fontFamily};font-size:20px;font-weight:700;">
-        ${theme.notifyIcon} New Appointment Booked
-      </h1>
-    </div>`;
+  const header = _platformBusinessHeader(theme.notifyIcon);
 
   const body = `
     <div style="padding:28px 28px 8px;font-family:${theme.bodyFontFamily};color:#1f2937;line-height:1.6;">
@@ -237,8 +294,6 @@ function buildBusinessNotificationHtml({
   return _wrapEmail(header, body, theme);
 }
 
-// ── Outer email shell ────────────────────────────────────────────────────────
-
 function _wrapEmail(header, body, theme) {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -257,4 +312,5 @@ module.exports = {
   getCompanyTheme,
   buildCustomerConfirmationHtml,
   buildBusinessNotificationHtml,
+  resolveFrontendAssetUrl,
 };
