@@ -9,6 +9,28 @@ const websocketServer = require('../utils/websocketServer');
 
 const router = express.Router();
 
+function getClientIp(req) {
+  const xfwd = req.headers['x-forwarded-for'];
+  if (typeof xfwd === 'string' && xfwd.trim()) {
+    // May be a comma-separated list; take the first hop.
+    return xfwd.split(',')[0].trim();
+  }
+  return req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || null;
+}
+
+function buildClientContextFromReq(req) {
+  const ipAddress = getClientIp(req);
+  const userAgent = req.get('user-agent') || null;
+  return { ipAddress, userAgent };
+}
+
+function mergeClientContext(existing, incoming) {
+  const out = { ...(existing || {}) };
+  if (incoming?.ipAddress && !out.ipAddress) out.ipAddress = incoming.ipAddress;
+  if (incoming?.userAgent && !out.userAgent) out.userAgent = incoming.userAgent;
+  return out;
+}
+
 function buildLeadBroadcastPayload(lead) {
   return {
     _id: lead._id,
@@ -21,6 +43,7 @@ function buildLeadBroadcastPayload(lead) {
     sourceChannel: lead.sourceChannel,
     status: lead.status,
     location: lead.location,
+    clientContext: lead.clientContext,
     initialInteraction: lead.initialInteraction,
     clickedItems: lead.clickedItems,
     appointmentDetails: lead.appointmentDetails,
@@ -56,7 +79,8 @@ router.post('/apps/:appId', authenticateToken, verifyAppOwnership, async (req, r
     }
     const appId = req.appId;
     const userId = req.user.id;
-    const lead = new Lead({ appId, ...value });
+    const ctx = buildClientContextFromReq(req);
+    const lead = new Lead({ appId, ...value, clientContext: mergeClientContext(value.clientContext, ctx) });
     await lead.save();
     
     // Broadcast new lead to user via WebSocket
@@ -79,7 +103,9 @@ router.post('/', authenticateToken, requireUserOrAdmin, async (req, res, next) =
     const userId = req.user.id;
     // For app-scoped routes, use appId; for legacy routes, use userId
     const appId = req.appId || null;
+    const ctx = buildClientContextFromReq(req);
     const leadData = appId ? { appId, ...value } : { userId, ...value };
+    leadData.clientContext = mergeClientContext(value.clientContext, ctx);
     const lead = new Lead(leadData);
     await lead.save();
     
@@ -121,6 +147,7 @@ router.get('/apps/:appId', authenticateToken, verifyAppOwnership, async (req, re
     if (value.leadType) conditions.push({ leadType: value.leadType });
     if (value.serviceType) conditions.push({ serviceType: value.serviceType });
     if (value.sourceChannel) conditions.push({ sourceChannel: value.sourceChannel });
+    if (value.status) conditions.push({ status: value.status });
     if (value.q && String(value.q).trim().length > 0) {
       const needle = String(value.q).trim();
       const rx = new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
@@ -174,6 +201,7 @@ router.get('/user/:userId', authenticateToken, requireUserOrAdmin, async (req, r
     if (value.leadType) conditions.push({ leadType: value.leadType });
     if (value.serviceType) conditions.push({ serviceType: value.serviceType });
     if (value.sourceChannel) conditions.push({ sourceChannel: value.sourceChannel });
+    if (value.status) conditions.push({ status: value.status });
     if (value.q && String(value.q).trim().length > 0) {
       const needle = String(value.q).trim();
       const rx = new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
@@ -256,6 +284,7 @@ router.post('/public/:userId', verifySignedThirdPartyForParamUser, async (req, r
       const messages = error.details.map(d => d.message);
       throw new AppError(`Validation failed: ${messages.join(', ')}`, 400);
     }
+    const ctx = buildClientContextFromReq(req);
     // Configurable dedupe window (hours): request override > env > default(4).
     const requestWindow = Number(req.body?.dedupeWindowHours);
     const envWindow = Number(process.env.LEAD_DEDUPE_WINDOW_HOURS);
@@ -281,6 +310,7 @@ router.post('/public/:userId', verifySignedThirdPartyForParamUser, async (req, r
       if (Array.isArray(mergeData.clickedItems) && mergeData.clickedItems.length === 0) delete mergeData.clickedItems;
       if (!mergeData.initialInteraction) delete mergeData.initialInteraction;
       if (existingOpenLead.status === 'in_progress' && mergeData.status === 'interacting') delete mergeData.status;
+      mergeData.clientContext = mergeClientContext(existingOpenLead.clientContext, mergeClientContext(value.clientContext, ctx));
       Object.assign(existingOpenLead, mergeData);
       await existingOpenLead.save();
       websocketServer.broadcastToUser(userId, { lead: buildLeadBroadcastPayload(existingOpenLead) });
@@ -288,7 +318,7 @@ router.post('/public/:userId', verifySignedThirdPartyForParamUser, async (req, r
     }
 
     // Accept appId from body for app-scoped leads (from widget).
-    const leadData = { userId, ...value };
+    const leadData = { userId, ...value, clientContext: mergeClientContext(value.clientContext, ctx) };
     const lead = new Lead(leadData);
     await lead.save();
     

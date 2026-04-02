@@ -25,6 +25,7 @@ router.put('/apps/:appId', authenticateToken, verifyAppOwnership, async (req, re
         type,
         question: i.question,
         answer: i.answer,
+        postBookingNote: i.postBookingNote || '',
         attachedWorkflows: (i.attachedWorkflows || []).map(aw => ({
           workflowId: aw.workflowId || null,
           order: aw.order || 0
@@ -71,6 +72,7 @@ router.put('/user/:ownerId', authenticateToken, requireUserOrAdmin, async (req, 
         type,
         question: i.question,
         answer: i.answer,
+        postBookingNote: i.postBookingNote || '',
         attachedWorkflows: (i.attachedWorkflows || []).map(aw => ({
           workflowId: aw.workflowId || null,
           order: aw.order || 0

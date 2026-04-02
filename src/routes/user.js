@@ -156,7 +156,7 @@ class UserController {
         .exec();
 
       const treatmentPromise = Questionnaire.find({ owner: id, type: QUESTIONNAIRE_TYPES.SERVICE_PLAN, isActive: true })
-        .select('question answer attachedWorkflows')
+        .select('question answer postBookingNote attachedWorkflows')
         .populate('attachedWorkflows.workflowId', 'title question questionTypeId isRoot order')
         .sort({ updatedAt: -1 })
         .exec();
@@ -191,6 +191,7 @@ class UserController {
       const treatmentPlans = treatmentDocs.map(d => ({
         question: d.question,
         answer: d.answer,
+        postBookingNote: d.postBookingNote || '',
         attachedWorkflows: (d.attachedWorkflows || [])
           .filter(aw => aw.workflowId)
           .sort((a, b) => (a.order || 0) - (b.order || 0))
@@ -426,7 +427,7 @@ class UserController {
       const userId = user._id;
 
       const treatmentPromise = Questionnaire.find({ owner: appId, type: QUESTIONNAIRE_TYPES.SERVICE_PLAN, isActive: true })
-        .select('question answer attachedWorkflows')
+        .select('question answer postBookingNote attachedWorkflows')
         .populate('attachedWorkflows.workflowId', 'title question questionTypeId isRoot order')
         .sort({ updatedAt: -1 })
         .exec();
@@ -463,6 +464,7 @@ class UserController {
       const treatmentPlans = treatmentDocs.map(d => ({
         question: d.question,
         answer: d.answer,
+        postBookingNote: d.postBookingNote || '',
         attachedWorkflows: (d.attachedWorkflows || [])
           .filter(aw => aw.workflowId)
           .sort((a, b) => (a.order || 0) - (b.order || 0))
@@ -701,7 +703,7 @@ class UserController {
       const userApp = { _id: app._id, name: app.name, industry: app.industry };
       
       const treatmentPromise = Questionnaire.find({ owner: appId, type: QUESTIONNAIRE_TYPES.SERVICE_PLAN, isActive: true })
-        .select('question answer attachedWorkflows')
+        .select('question answer postBookingNote attachedWorkflows')
         .populate('attachedWorkflows.workflowId', 'title question questionTypeId isRoot order')
         .sort({ updatedAt: -1 })
         .exec();
@@ -739,6 +741,7 @@ class UserController {
       const treatmentPlans = treatmentDocs.map(d => ({
         question: d.question,
         answer: d.answer,
+        postBookingNote: d.postBookingNote || '',
         attachedWorkflows: (d.attachedWorkflows || [])
           .filter(aw => aw.workflowId)
           .sort((a, b) => (a.order || 0) - (b.order || 0))
