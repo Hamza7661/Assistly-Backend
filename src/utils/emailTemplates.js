@@ -160,7 +160,7 @@ function buildCustomerConfirmationHtml({
       ${postBookingNote ? `
       <div style="background:#faf9f7;border-left:3px solid ${theme.primaryColor};padding:12px 16px;margin:16px 0;border-radius:0 4px 4px 0;">
         <p style="margin:0 0 4px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:${theme.primaryColor};">Important Instructions</p>
-        <p style="margin:0;font-size:13px;color:#374151;line-height:1.6;">${postBookingNote}</p>
+        <div style="margin:0;font-size:13px;color:#374151;line-height:1.6;">${postBookingNote}</div>
       </div>` : ''}
       <p style="margin-top:24px;font-size:14px;">
         If you need to reschedule or have any questions, please contact us directly.

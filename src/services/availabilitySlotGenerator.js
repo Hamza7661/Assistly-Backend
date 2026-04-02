@@ -104,8 +104,10 @@ function getAllowedWindowsForDay(dateStr, dayOfWeek, weeklyDay, exception) {
 
   if (!slots || slots.length === 0) {
     if (weeklyDay.allDay) {
-      const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
-      return [{ start: dayStart, end: dayEnd }];
+      // "All day" in the UI means bookable business hours, not midnight–midnight slots.
+      return [
+        { start: addTimeToDay(dayStart, '09:00'), end: addTimeToDay(dayStart, '17:00') }
+      ];
     }
     return [];
   }
