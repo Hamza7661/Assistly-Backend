@@ -34,7 +34,7 @@ const questionnaireSchema = new mongoose.Schema({
   postBookingNote: {
     type: String,
     trim: true,
-    maxlength: 1000,
+    maxlength: 8000,
     default: ''
   },
   // For treatment plans: attached workflow IDs with ordering
@@ -96,7 +96,7 @@ const questionnaireArraySchema = Joi.object({
     Joi.object({
       question: Joi.string().min(3).max(500).required(),
       answer: Joi.string().min(1).max(10000).required(),
-      postBookingNote: Joi.string().max(1000).allow('', null).optional(),
+      postBookingNote: Joi.string().max(8000).allow('', null).optional(),
       attachedWorkflows: Joi.array().items(
         Joi.object({
           workflowId: Joi.string().allow(null, ''),

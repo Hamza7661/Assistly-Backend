@@ -2,6 +2,7 @@ const express = require('express');
 const { Questionnaire, questionnaireValidationSchema, questionnaireUpdateValidationSchema, questionnaireArraySchema, QUESTIONNAIRE_TYPES } = require('../models/Questionnaire');
 const { AppError } = require('../utils/errorHandler');
 const { logger } = require('../utils/logger');
+const { cacheManager } = require('../utils/cache');
 const { authenticateToken, requireUserOrAdmin } = require('../middleware/auth');
 const { verifyAppOwnership } = require('../middleware/appOwnership');
 
@@ -32,6 +33,11 @@ router.put('/apps/:appId', authenticateToken, verifyAppOwnership, async (req, re
         })),
         isActive: true
       })));
+    }
+    try {
+      await cacheManager.del(cacheManager.getAppContextKey(appId));
+    } catch (e) {
+      logger.warn('Failed to invalidate app context cache after questionnaire update', { appId, error: e?.message });
     }
     logger.info('Questionnaire list replaced (app)', { appId, type, count: inserted.length });
     res.status(200).json({ status: 'success', message: 'Questionnaire updated', data: { count: inserted.length } });
@@ -79,6 +85,11 @@ router.put('/user/:ownerId', authenticateToken, requireUserOrAdmin, async (req, 
         })),
         isActive: true
       })));
+    }
+    try {
+      await cacheManager.del(cacheManager.getUserContextKey(ownerId));
+    } catch (e) {
+      logger.warn('Failed to invalidate user context cache after questionnaire update (legacy)', { ownerId, error: e?.message });
     }
     logger.info('Questionnaire list replaced', { ownerId, type, count: inserted.length });
     res.status(200).json({ status: 'success', message: 'Questionnaire updated', data: { count: inserted.length } });
