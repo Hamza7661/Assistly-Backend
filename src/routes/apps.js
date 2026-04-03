@@ -1180,7 +1180,7 @@ class AppController {
       
       const treatmentPromise = Questionnaire.find({ owner: appId, type: QUESTIONNAIRE_TYPES.SERVICE_PLAN, isActive: true })
         .select('question answer attachedWorkflows')
-        .populate('attachedWorkflows.workflowId', 'title question questionTypeId isRoot order')
+        .populate('attachedWorkflows.workflowId', 'title question questionTypeId choiceInputMode options isRoot order')
         .sort({ updatedAt: -1 })
         .exec();
 
@@ -1226,6 +1226,8 @@ class AppController {
               title: aw.workflowId.title,
               question: aw.workflowId.question,
               questionTypeId: aw.workflowId.questionTypeId,
+              choiceInputMode: aw.workflowId.choiceInputMode || 'button',
+              options: aw.workflowId.options || [],
               isRoot: aw.workflowId.isRoot,
               order: aw.workflowId.order
             } : null
@@ -1277,6 +1279,7 @@ class AppController {
                 title: rootWorkflow.title,
                 question: rootWorkflow.question,
                 questionTypeId: rootWorkflow.questionTypeId,
+                choiceInputMode: rootWorkflow.choiceInputMode || 'button',
                 options: rootWorkflow.options || [],
                 attachment: rootWorkflow.attachment ? {
                   hasFile: !!rootWorkflow.attachment.hasFile,
@@ -1296,6 +1299,7 @@ class AppController {
                 title: 'Unnamed Workflow',
                 question: '',
                 questionTypeId: defaultQuestionTypeId,
+                choiceInputMode: 'button',
                 isRoot: true,
                 order: 0,
                 isActive: true,
@@ -1444,7 +1448,7 @@ class AppController {
       const userApp = { _id: app._id, name: app.name, industry: app.industry };
       const treatmentPromise = Questionnaire.find({ owner: appId, type: QUESTIONNAIRE_TYPES.SERVICE_PLAN, isActive: true })
         .select('question answer attachedWorkflows')
-        .populate('attachedWorkflows.workflowId', 'title question questionTypeId isRoot order')
+        .populate('attachedWorkflows.workflowId', 'title question questionTypeId choiceInputMode options isRoot order')
         .sort({ updatedAt: -1 })
         .exec();
       const faqPromise = Questionnaire.find({ owner: appId, type: QUESTIONNAIRE_TYPES.FAQ, isActive: true })
@@ -1475,6 +1479,8 @@ class AppController {
               title: aw.workflowId.title,
               question: aw.workflowId.question,
               questionTypeId: aw.workflowId.questionTypeId,
+              choiceInputMode: aw.workflowId.choiceInputMode || 'button',
+              options: aw.workflowId.options || [],
               isRoot: aw.workflowId.isRoot,
               order: aw.workflowId.order
             } : null
@@ -1528,6 +1534,7 @@ class AppController {
                 title: 'Unnamed Workflow',
                 question: '',
                 questionTypeId: defaultQuestionTypeId,
+                choiceInputMode: 'button',
                 isRoot: true,
                 order: 0,
                 isActive: true,

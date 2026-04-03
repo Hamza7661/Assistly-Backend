@@ -182,15 +182,18 @@ function _businessNotificationTheme(baseTheme = {}) {
     ...baseTheme,
     // Keep body readable and consistent for business alerts.
     bodyFontFamily: "'Arial', 'Helvetica', sans-serif",
-    // UpZilo accent palette for business notifications.
+    // Match UpZilo header: primary red accents (overridable via UPZILO_BUSINESS_EMAIL_*).
     primaryColor: process.env.UPZILO_BUSINESS_EMAIL_PRIMARY || '#a30d13',
-    buttonColor: process.env.UPZILO_BUSINESS_EMAIL_BUTTON || '#8B6B3F',
+    buttonColor: process.env.UPZILO_BUSINESS_EMAIL_BUTTON || '#c01721',
     buttonTextColor: '#ffffff',
-    dividerColor: process.env.UPZILO_BUSINESS_EMAIL_DIVIDER || '#d7b57a',
+    dividerColor: process.env.UPZILO_BUSINESS_EMAIL_DIVIDER || '#fda4af',
     // Force neutral/brand footer (do not inherit company tagline/footer styling).
     tagline: '',
-    footerBg: process.env.UPZILO_BUSINESS_EMAIL_FOOTER_BG || '#2a1b0f',
-    footerTextColor: process.env.UPZILO_BUSINESS_EMAIL_FOOTER_TEXT || '#C9A96E',
+    footerBg:
+      process.env.UPZILO_BUSINESS_EMAIL_FOOTER_BG ||
+      'linear-gradient(180deg, #fff5f5 0%, #ffe4e6 100%)',
+    footerTextColor: process.env.UPZILO_BUSINESS_EMAIL_FOOTER_TEXT || '#57534e',
+    footerLinkColor: process.env.UPZILO_BUSINESS_EMAIL_FOOTER_LINK || '#c01721',
     notifyIcon: '📋',
   };
 }
@@ -236,11 +239,12 @@ function _formatDateTimeRange(startText, endText) {
 function _footer(theme, platformName) {
   const platform = platformName || process.env.FROM_NAME || 'UpZilo';
   const upziloLink = 'https://upzilo.com';
+  const linkColor = theme.footerLinkColor || theme.footerTextColor;
   return `
-    <div style="background:${theme.footerBg};padding:18px 24px;text-align:center;">
+    <div style="background:${theme.footerBg};padding:18px 24px;text-align:center;border-top:1px solid #fecdd3;">
       ${theme.tagline ? `<p style="color:${theme.footerTextColor};font-size:12px;letter-spacing:0.15em;margin:0 0 6px;text-transform:uppercase;">${theme.tagline}</p>` : ''}
-      <p style="color:${theme.footerTextColor};font-size:11px;margin:0;opacity:0.7;">
-        Powered by&nbsp;<a href="${upziloLink}" target="_blank" style="color:${theme.footerTextColor};font-weight:700;text-decoration:none;letter-spacing:0.04em;">${platform}</a>&nbsp;|&nbsp; This is an automated message, please do not reply.
+      <p style="color:${theme.footerTextColor};font-size:11px;margin:0;">
+        Powered by&nbsp;<a href="${upziloLink}" target="_blank" style="color:${linkColor};font-weight:700;text-decoration:none;letter-spacing:0.04em;">${platform}</a>&nbsp;|&nbsp; This is an automated message, please do not reply.
       </p>
     </div>`;
 }
