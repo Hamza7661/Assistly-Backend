@@ -157,7 +157,7 @@ class UserController {
 
       const treatmentPromise = Questionnaire.find({ owner: id, type: QUESTIONNAIRE_TYPES.SERVICE_PLAN, isActive: true })
         .select('question answer postBookingNote attachedWorkflows')
-        .populate('attachedWorkflows.workflowId', 'title question questionTypeId isRoot order')
+        .populate('attachedWorkflows.workflowId', 'title question questionTypeId choiceInputMode options isRoot order')
         .sort({ updatedAt: -1 })
         .exec();
 
@@ -203,6 +203,8 @@ class UserController {
               title: aw.workflowId.title,
               question: aw.workflowId.question,
               questionTypeId: aw.workflowId.questionTypeId,
+              choiceInputMode: aw.workflowId.choiceInputMode || 'button',
+              options: aw.workflowId.options || [],
               isRoot: aw.workflowId.isRoot,
               order: aw.workflowId.order
             } : null
@@ -261,6 +263,7 @@ class UserController {
                 title: rootWorkflow.title,
                 question: rootWorkflow.question,
                 questionTypeId: rootWorkflow.questionTypeId,
+                choiceInputMode: rootWorkflow.choiceInputMode || 'button',
                 options: rootWorkflow.options || [],
                 attachment: rootWorkflow.attachment ? {
                   hasFile: !!rootWorkflow.attachment.hasFile,
@@ -281,6 +284,7 @@ class UserController {
                 title: 'Unnamed Workflow',
                 question: '',
                 questionTypeId: defaultQuestionTypeId,
+                choiceInputMode: 'button',
                 isRoot: true,
                 order: 0,
                 isActive: true,
@@ -429,7 +433,7 @@ class UserController {
 
       const treatmentPromise = Questionnaire.find({ owner: appId, type: QUESTIONNAIRE_TYPES.SERVICE_PLAN, isActive: true })
         .select('question answer postBookingNote attachedWorkflows')
-        .populate('attachedWorkflows.workflowId', 'title question questionTypeId isRoot order')
+        .populate('attachedWorkflows.workflowId', 'title question questionTypeId choiceInputMode options isRoot order')
         .sort({ updatedAt: -1 })
         .exec();
 
@@ -477,6 +481,8 @@ class UserController {
               title: aw.workflowId.title,
               question: aw.workflowId.question,
               questionTypeId: aw.workflowId.questionTypeId,
+              choiceInputMode: aw.workflowId.choiceInputMode || 'button',
+              options: aw.workflowId.options || [],
               isRoot: aw.workflowId.isRoot,
               order: aw.workflowId.order
             } : null
@@ -531,6 +537,7 @@ class UserController {
                 title: rootWorkflow.title,
                 question: rootWorkflow.question,
                 questionTypeId: rootWorkflow.questionTypeId,
+                choiceInputMode: rootWorkflow.choiceInputMode || 'button',
                 options: rootWorkflow.options || [],
                 attachment: rootWorkflow.attachment ? {
                   hasFile: !!rootWorkflow.attachment.hasFile,
@@ -550,6 +557,7 @@ class UserController {
                 title: 'Unnamed Workflow',
                 question: '',
                 questionTypeId: defaultQuestionTypeId,
+                choiceInputMode: 'button',
                 isRoot: true,
                 order: 0,
                 isActive: true,
@@ -706,7 +714,7 @@ class UserController {
       
       const treatmentPromise = Questionnaire.find({ owner: appId, type: QUESTIONNAIRE_TYPES.SERVICE_PLAN, isActive: true })
         .select('question answer postBookingNote attachedWorkflows')
-        .populate('attachedWorkflows.workflowId', 'title question questionTypeId isRoot order')
+        .populate('attachedWorkflows.workflowId', 'title question questionTypeId choiceInputMode options isRoot order')
         .sort({ updatedAt: -1 })
         .exec();
 
@@ -755,6 +763,8 @@ class UserController {
               title: aw.workflowId.title,
               question: aw.workflowId.question,
               questionTypeId: aw.workflowId.questionTypeId,
+              choiceInputMode: aw.workflowId.choiceInputMode || 'button',
+              options: aw.workflowId.options || [],
               isRoot: aw.workflowId.isRoot,
               order: aw.workflowId.order
             } : null
@@ -813,6 +823,7 @@ class UserController {
                 title: rootWorkflow.title,
                 question: rootWorkflow.question,
                 questionTypeId: rootWorkflow.questionTypeId,
+                choiceInputMode: rootWorkflow.choiceInputMode || 'button',
                 options: rootWorkflow.options || [],
                 attachment: rootWorkflow.attachment ? {
                   hasFile: !!rootWorkflow.attachment.hasFile,
@@ -833,6 +844,7 @@ class UserController {
                 title: 'Unnamed Workflow',
                 question: '',
                 questionTypeId: defaultQuestionTypeId,
+                choiceInputMode: 'button',
                 isRoot: true,
                 order: 0,
                 isActive: true,
