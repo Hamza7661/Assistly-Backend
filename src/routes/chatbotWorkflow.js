@@ -683,7 +683,7 @@ router.get('/public/:ownerId', async (req, res, next) => {
     const filter = { owner: ownerId, isActive: true };
     
     const workflows = await ChatbotWorkflow.find(filter)
-      .select('title question questionTypeId options attachment.hasFile attachment.filename isRoot order')
+      .select('title question questionTypeId choiceInputMode options attachment.hasFile attachment.filename isRoot order')
       .sort({ order: 1, createdAt: 1 })
       .exec();
     

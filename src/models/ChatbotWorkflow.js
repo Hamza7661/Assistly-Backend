@@ -55,6 +55,11 @@ const chatbotWorkflowSchema = new mongoose.Schema({
     required: true,
     default: 1 
   },
+  choiceInputMode: {
+    type: String,
+    enum: ['button', 'checkbox'],
+    default: 'button'
+  },
   // Multiple-choice options with optional branching to different next questions
   options: {
     type: [workflowOptionSchema],
@@ -116,6 +121,7 @@ const workflowValidationSchema = Joi.object({
   title: Joi.string().max(200).required(),
   question: Joi.string().max(500).required(),
   questionTypeId: Joi.number().integer().min(1).default(1), 
+  choiceInputMode: Joi.string().valid('button', 'checkbox').optional(),
   workflowGroupId: Joi.string().allow(null, '').optional(),
   options: Joi.array().items(workflowOptionValidationSchema).optional(),
   isRoot: Joi.boolean().optional(),
@@ -127,6 +133,7 @@ const workflowUpdateValidationSchema = Joi.object({
   title: Joi.string().max(200).optional(),
   question: Joi.string().max(500).optional(),
   questionTypeId: Joi.number().integer().min(1).optional(),
+  choiceInputMode: Joi.string().valid('button', 'checkbox').optional(),
   workflowGroupId: Joi.string().allow(null, '').optional(),
   options: Joi.array().items(workflowOptionValidationSchema).optional(),
   isRoot: Joi.boolean().optional(),

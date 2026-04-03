@@ -171,7 +171,7 @@ class UserController {
 
       const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
       const workflowPromise = ChatbotWorkflow.find({ owner: id })
-        .select('title question questionTypeId options attachment.hasFile attachment.filename attachment.contentType isRoot order workflowGroupId isActive')
+        .select('title question questionTypeId choiceInputMode options attachment.hasFile attachment.filename attachment.contentType isRoot order workflowGroupId isActive')
         .sort({ order: 1, createdAt: 1 })
         .exec();
 
@@ -220,6 +220,7 @@ class UserController {
           title: w.title,
           question: w.question,
           questionTypeId: w.questionTypeId,
+          choiceInputMode: w.choiceInputMode || 'button',
           options: w.options || [],
           attachment: w.attachment ? {
             hasFile: !!w.attachment.hasFile,
@@ -449,7 +450,7 @@ class UserController {
 
       const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
       const workflowPromise = ChatbotWorkflow.find({ owner: appId })
-        .select('title question questionTypeId options attachment.hasFile attachment.filename attachment.contentType isRoot order workflowGroupId isActive')
+        .select('title question questionTypeId choiceInputMode options attachment.hasFile attachment.filename attachment.contentType isRoot order workflowGroupId isActive')
         .sort({ order: 1, createdAt: 1 })
         .exec();
 
@@ -492,6 +493,7 @@ class UserController {
           title: w.title,
           question: w.question,
           questionTypeId: w.questionTypeId,
+          choiceInputMode: w.choiceInputMode || 'button',
           options: w.options || [],
           attachment: w.attachment ? {
             hasFile: !!w.attachment.hasFile,
@@ -725,7 +727,7 @@ class UserController {
 
       const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
       const workflowPromise = ChatbotWorkflow.find({ owner: appId })
-        .select('title question questionTypeId options attachment.hasFile attachment.filename attachment.contentType isRoot order workflowGroupId isActive')
+        .select('title question questionTypeId choiceInputMode options attachment.hasFile attachment.filename attachment.contentType isRoot order workflowGroupId isActive')
         .sort({ order: 1, createdAt: 1 })
         .exec();
 
@@ -770,6 +772,7 @@ class UserController {
           title: w.title,
           question: w.question,
           questionTypeId: w.questionTypeId,
+          choiceInputMode: w.choiceInputMode || 'button',
           options: w.options || [],
           attachment: w.attachment ? {
             hasFile: !!w.attachment.hasFile,
