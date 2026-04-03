@@ -40,6 +40,17 @@ function slugifyLeadValue(text) {
   return text.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') || '';
 }
 
+async function loadQuestionTypeCodeById() {
+  const rows = await QuestionType.find({ isActive: true }).select('id code').lean();
+  const map = new Map();
+  for (const t of rows || []) {
+    if (t && typeof t.id === 'number' && t.code) {
+      map.set(t.id, String(t.code).trim().toLowerCase());
+    }
+  }
+  return map;
+}
+
 // Use application-based lead type messages from Integration when present; otherwise fallback to default list
 // Normalize value from text on read so all apps/industries get correct routing even if DB had stale value
 function getLeadTypesFromIntegration(integration) {
@@ -1210,6 +1221,7 @@ class AppController {
         .select('id')
         .lean();
       const defaultQuestionTypeId = defaultQuestionType?.id || 1;
+      const questionTypeCodeById = await loadQuestionTypeCodeById();
 
       // Process treatment plans
       const treatmentPlans = treatmentDocs.map(d => ({
@@ -1226,6 +1238,7 @@ class AppController {
               title: aw.workflowId.title,
               question: aw.workflowId.question,
               questionTypeId: aw.workflowId.questionTypeId,
+              questionTypeCode: questionTypeCodeById.get(aw.workflowId.questionTypeId) || '',
               choiceInputMode: aw.workflowId.choiceInputMode || 'button',
               options: aw.workflowId.options || [],
               isRoot: aw.workflowId.isRoot,
@@ -1246,6 +1259,7 @@ class AppController {
           title: w.title,
           question: w.question,
           questionTypeId: w.questionTypeId,
+          questionTypeCode: questionTypeCodeById.get(w.questionTypeId) || '',
           choiceInputMode: w.choiceInputMode || 'button',
           options: w.options || [],
           attachment: w.attachment ? {
@@ -1279,6 +1293,7 @@ class AppController {
                 title: rootWorkflow.title,
                 question: rootWorkflow.question,
                 questionTypeId: rootWorkflow.questionTypeId,
+                questionTypeCode: questionTypeCodeById.get(rootWorkflow.questionTypeId) || '',
                 choiceInputMode: rootWorkflow.choiceInputMode || 'button',
                 options: rootWorkflow.options || [],
                 attachment: rootWorkflow.attachment ? {
@@ -1299,6 +1314,7 @@ class AppController {
                 title: 'Unnamed Workflow',
                 question: '',
                 questionTypeId: defaultQuestionTypeId,
+                questionTypeCode: questionTypeCodeById.get(defaultQuestionTypeId) || '',
                 choiceInputMode: 'button',
                 isRoot: true,
                 order: 0,
@@ -1465,6 +1481,7 @@ class AppController {
       ]);
       const defaultQuestionType = await QuestionType.findOne({ isActive: true }).sort({ id: 1 }).select('id').lean();
       const defaultQuestionTypeId = defaultQuestionType?.id || 1;
+      const questionTypeCodeById = await loadQuestionTypeCodeById();
       const treatmentPlans = treatmentDocs.map(d => ({
         question: d.question,
         answer: d.answer,
@@ -1479,6 +1496,7 @@ class AppController {
               title: aw.workflowId.title,
               question: aw.workflowId.question,
               questionTypeId: aw.workflowId.questionTypeId,
+              questionTypeCode: questionTypeCodeById.get(aw.workflowId.questionTypeId) || '',
               choiceInputMode: aw.workflowId.choiceInputMode || 'button',
               options: aw.workflowId.options || [],
               isRoot: aw.workflowId.isRoot,
@@ -1495,6 +1513,7 @@ class AppController {
           title: w.title,
           question: w.question,
           questionTypeId: w.questionTypeId,
+          questionTypeCode: questionTypeCodeById.get(w.questionTypeId) || '',
           choiceInputMode: w.choiceInputMode || 'button',
           options: w.options || [],
           isRoot: w.isRoot,
@@ -1519,6 +1538,7 @@ class AppController {
                 title: rootWorkflow.title,
                 question: rootWorkflow.question,
                 questionTypeId: rootWorkflow.questionTypeId,
+                questionTypeCode: questionTypeCodeById.get(rootWorkflow.questionTypeId) || '',
                 choiceInputMode: rootWorkflow.choiceInputMode || 'button',
                 options: rootWorkflow.options || [],
                 isRoot: rootWorkflow.isRoot,
@@ -1534,6 +1554,7 @@ class AppController {
                 title: 'Unnamed Workflow',
                 question: '',
                 questionTypeId: defaultQuestionTypeId,
+                questionTypeCode: questionTypeCodeById.get(defaultQuestionTypeId) || '',
                 choiceInputMode: 'button',
                 isRoot: true,
                 order: 0,
