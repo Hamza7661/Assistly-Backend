@@ -177,12 +177,60 @@ function _platformBusinessHeader(notifyIcon) {
     </div>`;
 }
 
+function _businessNotificationTheme(baseTheme = {}) {
+  return {
+    ...baseTheme,
+    // Keep body readable and consistent for business alerts.
+    bodyFontFamily: "'Arial', 'Helvetica', sans-serif",
+    // UpZilo accent palette for business notifications.
+    primaryColor: process.env.UPZILO_BUSINESS_EMAIL_PRIMARY || '#a30d13',
+    buttonColor: process.env.UPZILO_BUSINESS_EMAIL_BUTTON || '#8B6B3F',
+    buttonTextColor: '#ffffff',
+    dividerColor: process.env.UPZILO_BUSINESS_EMAIL_DIVIDER || '#d7b57a',
+    // Force neutral/brand footer (do not inherit company tagline/footer styling).
+    tagline: '',
+    footerBg: process.env.UPZILO_BUSINESS_EMAIL_FOOTER_BG || '#2a1b0f',
+    footerTextColor: process.env.UPZILO_BUSINESS_EMAIL_FOOTER_TEXT || '#C9A96E',
+    notifyIcon: '📋',
+  };
+}
+
 function _button(href, label, theme) {
   return `<a href="${href}" style="display:inline-block;padding:12px 28px;background:${theme.buttonColor};color:${theme.buttonTextColor};text-decoration:none;border-radius:4px;font-weight:600;font-size:14px;letter-spacing:0.05em;">${label}</a>`;
 }
 
 function _divider(theme) {
   return `<hr style="border:none;border-top:1px solid ${theme.dividerColor};margin:20px 0;" />`;
+}
+
+function _formatDateTimeRange(startText, endText) {
+  const start = String(startText || '').trim();
+  const end = String(endText || '').trim();
+  if (!start && !end) return '';
+  if (!end) return start;
+  if (!start) return end;
+
+  // If both parse and are same calendar day, keep date once and show end time only.
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+  if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
+    if (startDate.toDateString() === endDate.toDateString()) {
+      const endTime = end.match(/(\d{1,2}:\d{2}\s*[AP]M)$/i)?.[1];
+      if (endTime) {
+        return `${start} – ${endTime.toUpperCase().replace(/\s+/g, ' ')}`;
+      }
+    }
+  }
+
+  // Fallback for plain text ranges: if date prefix up to year matches, trim date from end.
+  const prefixPattern = /^(.+?\b\d{4},?\s*)(.+)$/;
+  const s = start.match(prefixPattern);
+  const e = end.match(prefixPattern);
+  if (s && e && s[1].trim().toLowerCase() === e[1].trim().toLowerCase()) {
+    return `${start} – ${e[2].trim()}`;
+  }
+
+  return `${start} – ${end}`;
 }
 
 function _footer(theme, platformName) {
@@ -210,6 +258,7 @@ function buildCustomerConfirmationHtml({
   theme,
 }) {
   const header = _customerConfirmationHeader(theme);
+  const dateTimeText = _formatDateTimeRange(startText, endText);
 
   const body = `
     <div style="padding:28px 28px 8px;font-family:${theme.bodyFontFamily};color:#1f2937;line-height:1.6;">
@@ -223,7 +272,7 @@ function buildCustomerConfirmationHtml({
         </tr>
         <tr>
           <td style="padding:8px 0;color:#6b7280;font-size:13px;">Date &amp; Time</td>
-          <td style="padding:8px 0;font-weight:600;font-size:14px;color:#111827;">${startText}${endText ? ` – ${endText}` : ''}</td>
+          <td style="padding:8px 0;font-weight:600;font-size:14px;color:#111827;">${dateTimeText}</td>
         </tr>
       </table>
       ${_divider(theme)}
@@ -259,14 +308,16 @@ function buildBusinessNotificationHtml({
   calendarLink,
   theme,
 }) {
-  const header = _platformBusinessHeader(theme.notifyIcon);
+  const brandTheme = _businessNotificationTheme(theme);
+  const header = _platformBusinessHeader(brandTheme.notifyIcon);
+  const dateTimeText = _formatDateTimeRange(startText, endText);
 
   const body = `
-    <div style="padding:28px 28px 8px;font-family:${theme.bodyFontFamily};color:#1f2937;line-height:1.6;">
+    <div style="padding:28px 28px 8px;font-family:${brandTheme.bodyFontFamily};color:#1f2937;line-height:1.6;">
       <p style="font-size:15px;">Hi <strong>${businessName}</strong>,</p>
-      <p>A new appointment has been booked through your chatbot assistant.</p>
-      ${_divider(theme)}
-      <p style="font-size:13px;font-weight:700;color:${theme.primaryColor};text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Appointment Details</p>
+      <p>A new appointment has been booked through your UpZilo assistant.</p>
+      ${_divider(brandTheme)}
+      <p style="font-size:13px;font-weight:700;color:${brandTheme.primaryColor};text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Appointment Details</p>
       <table style="width:100%;border-collapse:collapse;">
         <tr>
           <td style="padding:8px 0;color:#6b7280;font-size:13px;width:130px;">Service</td>
@@ -274,11 +325,11 @@ function buildBusinessNotificationHtml({
         </tr>
         <tr>
           <td style="padding:8px 0;color:#6b7280;font-size:13px;">Date &amp; Time</td>
-          <td style="padding:8px 0;font-weight:600;font-size:14px;color:#111827;">${startText}${endText ? ` – ${endText}` : ''}</td>
+          <td style="padding:8px 0;font-weight:600;font-size:14px;color:#111827;">${dateTimeText}</td>
         </tr>
       </table>
-      ${_divider(theme)}
-      <p style="font-size:13px;font-weight:700;color:${theme.primaryColor};text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Customer Details</p>
+      ${_divider(brandTheme)}
+      <p style="font-size:13px;font-weight:700;color:${brandTheme.primaryColor};text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Customer Details</p>
       <table style="width:100%;border-collapse:collapse;">
         <tr>
           <td style="padding:8px 0;color:#6b7280;font-size:13px;width:130px;">Name</td>
@@ -293,11 +344,11 @@ function buildBusinessNotificationHtml({
           <td style="padding:8px 0;font-size:14px;color:#111827;">${customerPhone}</td>
         </tr>
       </table>
-      ${_divider(theme)}
-      ${calendarLink ? `<p style="margin:16px 0;">${_button(calendarLink, 'Open in Calendar', theme)}</p>` : ''}
+      ${_divider(brandTheme)}
+      ${calendarLink ? `<p style="margin:16px 0;">${_button(calendarLink, 'Open in Calendar', brandTheme)}</p>` : ''}
     </div>`;
 
-  return _wrapEmail(header, body, theme);
+  return _wrapEmail(header, body, brandTheme);
 }
 
 function _wrapEmail(header, body, theme) {
