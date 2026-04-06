@@ -6,7 +6,11 @@ const { AppError } = require('../utils/errorHandler');
 const { verifySignedThirdPartyForParamUser } = require('../middleware/thirdParty');
 const EmailService = require('../utils/emailService');
 const SmsService = require('../utils/smsService');
+const { Integration } = require('../models/Integration');
+const { App } = require('../models/App');
 const crypto = require('crypto');
+
+const normalizeBrand = (value) => String(value || '').trim().toLowerCase();
 
 class OtpController {
   constructor() {
@@ -35,7 +39,7 @@ class OtpController {
   async sendEmailOtp(req, res, next) {
     try {
       const { id: userId } = req.params;
-      const { email, htmlTemplate, branding, supportEmail, companyName } = req.body;
+      const { email, htmlTemplate, branding, supportEmail, companyName, appId } = req.body;
 
       // Validate request body
       const { error } = sendEmailOtpValidationSchema.validate({ email });
@@ -77,12 +81,39 @@ class OtpController {
         otp
       };
 
+      let resolvedBranding = branding;
+      let resolvedCompanyName = companyName;
+      const trimmedAppId = String(appId || '').trim();
+
+      // Prefer explicit request branding/company; otherwise resolve from appId.
+      if ((!resolvedBranding || !resolvedCompanyName) && trimmedAppId) {
+        try {
+          const integration = await Integration.findOne({ owner: trimmedAppId })
+            .select('companyName')
+            .lean();
+          const app = await App.findById(trimmedAppId).select('name').lean();
+          const dbCompanyName = String(integration?.companyName || app?.name || '').trim();
+          if (!resolvedCompanyName && dbCompanyName) {
+            resolvedCompanyName = dbCompanyName;
+          }
+          if (!resolvedBranding && normalizeBrand(dbCompanyName)) {
+            resolvedBranding = dbCompanyName;
+          }
+        } catch (resolveError) {
+          logger.warn('Failed to resolve OTP branding from appId', {
+            appId: trimmedAppId,
+            error: resolveError.message,
+          });
+        }
+      }
+
       const templateData = {
         htmlTemplate,
         textContent: `Your verification code is: ${otp}. This code will expire in 10 minutes.`,
-        branding,
+        branding: resolvedBranding,
         supportEmail,
-        companyName,
+        companyName: resolvedCompanyName,
+        appId: trimmedAppId || undefined,
       };
 
       await this.emailService.sendOtpEmail(emailData, templateData);
