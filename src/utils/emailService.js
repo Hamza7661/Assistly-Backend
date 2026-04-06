@@ -236,7 +236,7 @@ class EmailService {
       htmlContent = buildFacelismVerificationCodeHtml({
         customerName: firstName || 'Customer',
         otp,
-        supportEmail: templateData?.supportEmail || 'support@facelism.com',
+        supportEmail: templateData?.supportEmail || 'info@facelism.com',
       });
       textContent =
         textContent ||
