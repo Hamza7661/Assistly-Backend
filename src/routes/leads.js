@@ -5,6 +5,7 @@ const { verifySignedThirdPartyForParamUser } = require('../middleware/thirdParty
 const { verifyAppOwnership } = require('../middleware/appOwnership');
 const { App } = require('../models/App');
 const { Lead, leadCreateSchema, leadQuerySchema, leadUpdateSchema } = require('../models/Lead');
+const { LeadReadState } = require('../models/LeadReadState');
 const websocketServer = require('../utils/websocketServer');
 
 const router = express.Router();
@@ -129,6 +130,70 @@ router.get('/:id', authenticateToken, requireUserOrAdmin, async (req, res, next)
     const allowed = await canAccessLead(lead, req.user.id, req.user.role, req.appId);
     if (!allowed) return next(new AppError('Insufficient permissions', 403));
     res.status(200).json({ status: 'success', data: { lead } });
+  } catch (err) { next(err); }
+});
+
+// Get read-state map for specific leads in an app (cross-device sync)
+router.get('/apps/:appId/read-state', authenticateToken, verifyAppOwnership, async (req, res, next) => {
+  try {
+    const appId = req.appId;
+    const rawLeadIds = String(req.query.leadIds || '')
+      .split(',')
+      .map((v) => v.trim())
+      .filter(Boolean);
+
+    if (rawLeadIds.length === 0) {
+      return res.status(200).json({ status: 'success', data: { reads: {} } });
+    }
+
+    const leadIds = Array.from(new Set(rawLeadIds)).slice(0, 500);
+    const reads = await LeadReadState.find({
+      appId,
+      userId: req.user.id,
+      leadId: { $in: leadIds },
+    }).select('leadId readAt').lean();
+
+    const readMap = {};
+    reads.forEach((row) => {
+      if (!row?.leadId) return;
+      readMap[String(row.leadId)] = row.readAt;
+    });
+
+    res.status(200).json({ status: 'success', data: { reads: readMap } });
+  } catch (err) { next(err); }
+});
+
+// Mark one or many leads as read in an app (cross-device sync)
+router.post('/apps/:appId/read-state/mark', authenticateToken, verifyAppOwnership, async (req, res, next) => {
+  try {
+    const appId = req.appId;
+    const rawLeadIds = Array.isArray(req.body?.leadIds) ? req.body.leadIds : [];
+    const leadIds = Array.from(new Set(
+      rawLeadIds
+        .map((v) => String(v || '').trim())
+        .filter(Boolean)
+    )).slice(0, 500);
+
+    if (leadIds.length === 0) {
+      return res.status(200).json({ status: 'success', data: { updated: 0 } });
+    }
+
+    const now = new Date();
+    const ops = leadIds.map((leadId) => ({
+      updateOne: {
+        filter: { appId, userId: req.user.id, leadId },
+        update: {
+          $set: { readAt: now },
+          $setOnInsert: { appId, userId: req.user.id, leadId },
+        },
+        upsert: true,
+      },
+    }));
+
+    const result = await LeadReadState.bulkWrite(ops, { ordered: false });
+    const updated = (result.modifiedCount || 0) + (result.upsertedCount || 0);
+
+    res.status(200).json({ status: 'success', data: { updated } });
   } catch (err) { next(err); }
 });
 
