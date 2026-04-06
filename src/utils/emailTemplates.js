@@ -355,6 +355,56 @@ function buildBusinessNotificationHtml({
   return _wrapEmail(header, body, brandTheme);
 }
 
+/**
+ * Build HTML for Facelism verification code (OTP) email.
+ * This is intentionally separate from the default UpZilo OTP template.
+ */
+function buildFacelismVerificationCodeHtml({
+  customerName = 'Customer',
+  otp = '{{OTP}}',
+  supportEmail = 'info@facelism.com',
+} = {}) {
+  const theme = getCompanyTheme('facelism');
+  const logoBlock = _logoHtml(theme, { forLightHeader: true });
+
+  const header = `
+    <div style="background:${theme.customerEmailHeaderBg || '#ffffff'};padding:24px 24px 18px;text-align:center;border-bottom:${theme.customerEmailHeaderBorderBottom || `3px solid ${theme.accentColor}`};">
+      ${logoBlock}
+      ${theme.tagline ? `<p style="margin:6px 0 0;color:${theme.customerEmailHeaderTaglineColor || '#6b7280'};font-size:13px;letter-spacing:0.1em;text-transform:uppercase;">${theme.tagline}</p>` : ''}
+    </div>`;
+
+  const body = `
+    <div style="padding:28px 28px 8px;font-family:${theme.bodyFontFamily};color:#1f2937;line-height:1.6;">
+      <h1 style="text-align:center;margin:0 0 16px;font-family:${theme.fontFamily};font-size:30px;color:#111827;">Verify Your Account</h1>
+      <p style="text-align:center;color:#4b5563;font-size:16px;margin:0 0 22px;">
+        Hello ${customerName},<br/>
+        Please use the verification code below to complete your account setup.
+      </p>
+      <div style="text-align:center;margin:14px 0 18px;">
+        <p style="margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:0.12em;color:#6b7280;">Verification Code</p>
+        <div style="display:inline-block;background:#f3f4f6;border:2px solid ${theme.primaryColor};color:${theme.primaryColor};font-size:34px;font-weight:700;letter-spacing:10px;font-family:'Courier New',monospace;padding:14px 24px;border-radius:6px;">
+          ${otp}
+        </div>
+      </div>
+      <div style="margin:20px auto 0;max-width:520px;background:#f8f2e8;border:1px solid #d9b98a;padding:12px 14px;border-radius:4px;text-align:center;">
+        <span style="color:#7a4f22;font-size:14px;font-weight:600;">This code will expire in 10 minutes</span>
+      </div>
+      <div style="margin:18px auto 0;max-width:520px;background:#faf9f7;border-left:3px solid ${theme.primaryColor};padding:12px 14px;border-radius:0 4px 4px 0;">
+        <p style="margin:0 0 8px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:${theme.primaryColor};">Important Security Information</p>
+        <p style="margin:0;color:#374151;font-size:13px;line-height:1.7;">
+          • Never share this code with anyone<br/>
+          • Our team will never ask for your verification code<br/>
+          • If you did not request this code, please ignore this email
+        </p>
+      </div>
+      <p style="margin:18px 0 6px;text-align:center;font-size:12px;color:#6b7280;">
+        Need help? Contact us at ${supportEmail}
+      </p>
+    </div>`;
+
+  return _wrapEmail(header, body, theme);
+}
+
 function _wrapEmail(header, body, theme) {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -373,5 +423,6 @@ module.exports = {
   getCompanyTheme,
   buildCustomerConfirmationHtml,
   buildBusinessNotificationHtml,
+  buildFacelismVerificationCodeHtml,
   resolveFrontendAssetUrl,
 };
