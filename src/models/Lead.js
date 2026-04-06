@@ -36,6 +36,12 @@ const leadSchema = new mongoose.Schema({
     link: { type: String, trim: true, default: null },
     confirmed: { type: Boolean, default: false }
   },
+  userFeedback: {
+    experience: { type: String, enum: ['very_happy', 'happy', 'neutral', 'sad', 'very_sad'], default: null },
+    rating: { type: Number, min: 1, max: 5, default: null },
+    comment: { type: String, trim: true, default: null, maxlength: 500 },
+    submittedAt: { type: Date, default: null }
+  },
   leadTypeSwitchHistory: [{
     from: { type: String, trim: true, default: null, maxlength: 150 },
     to: { type: String, trim: true, default: null, maxlength: 150 },
@@ -108,6 +114,12 @@ const leadCreateSchema = Joi.object({
     link: Joi.string().allow(null, '').optional(),
     confirmed: Joi.boolean().optional()
   }).allow(null).optional(),
+  userFeedback: Joi.object({
+    experience: Joi.string().valid('very_happy', 'happy', 'neutral', 'sad', 'very_sad').allow(null, '').optional(),
+    rating: Joi.number().integer().min(1).max(5).allow(null).optional(),
+    comment: Joi.string().max(500).allow(null, '').optional(),
+    submittedAt: Joi.date().iso().allow(null).optional()
+  }).allow(null).optional(),
   leadTypeSwitchHistory: Joi.array().items(
     Joi.object({
       from: Joi.string().max(150).allow(null, '').optional(),
@@ -173,6 +185,12 @@ const leadUpdateSchema = Joi.object({
     end: Joi.date().iso().allow(null).optional(),
     link: Joi.string().allow(null, '').optional(),
     confirmed: Joi.boolean().optional()
+  }).allow(null).optional(),
+  userFeedback: Joi.object({
+    experience: Joi.string().valid('very_happy', 'happy', 'neutral', 'sad', 'very_sad').allow(null, '').optional(),
+    rating: Joi.number().integer().min(1).max(5).allow(null).optional(),
+    comment: Joi.string().max(500).allow(null, '').optional(),
+    submittedAt: Joi.date().iso().allow(null).optional()
   }).allow(null).optional(),
   leadTypeSwitchHistory: Joi.array().items(
     Joi.object({

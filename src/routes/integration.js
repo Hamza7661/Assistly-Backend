@@ -34,7 +34,10 @@ class IntegrationController {
           greeting: process.env.DEFAULT_GREETING || 'Hi this is {assistantName} your virtual ai assistant from {companyName}. How can I help you today?',
           primaryColor: process.env.DEFAULT_PRIMARY_COLOR || '#3B82F6',
           validateEmail: true,
-          validatePhoneNumber: true
+          validatePhoneNumber: true,
+          captureLeadName: true,
+          captureLeadEmail: true,
+          captureLeadPhoneNumber: true
         });
         await integration.save();
       } 
@@ -64,7 +67,11 @@ class IntegrationController {
             primaryColor: integration.primaryColor,
             validateEmail: integration.validateEmail,
             validatePhoneNumber: integration.validatePhoneNumber,
+            captureLeadName: integration.captureLeadName !== false,
+            captureLeadEmail: integration.captureLeadEmail !== false,
+            captureLeadPhoneNumber: integration.captureLeadPhoneNumber !== false,
             conversationStyle: integration.conversationStyle || false,
+            captureFeedbackEnabled: !!integration.captureFeedbackEnabled,
             googleReviewEnabled: integration.googleReviewEnabled || false,
             googleReviewUrl: integration.googleReviewUrl || null,
             calendarConnected: !!integration.googleCalendarConnected,
@@ -105,6 +112,18 @@ class IntegrationController {
       }
       if (typeof updateData.conversationStyle === 'string') {
         updateData.conversationStyle = updateData.conversationStyle === 'true';
+      }
+      if (typeof updateData.captureFeedbackEnabled === 'string') {
+        updateData.captureFeedbackEnabled = updateData.captureFeedbackEnabled === 'true';
+      }
+      if (typeof updateData.captureLeadName === 'string') {
+        updateData.captureLeadName = updateData.captureLeadName === 'true';
+      }
+      if (typeof updateData.captureLeadEmail === 'string') {
+        updateData.captureLeadEmail = updateData.captureLeadEmail === 'true';
+      }
+      if (typeof updateData.captureLeadPhoneNumber === 'string') {
+        updateData.captureLeadPhoneNumber = updateData.captureLeadPhoneNumber === 'true';
       }
 
       // Handle leadTypeMessages from FormData (it comes as a JSON string)
@@ -298,7 +317,11 @@ class IntegrationController {
             primaryColor: integration.primaryColor,
             validateEmail: integration.validateEmail,
             validatePhoneNumber: integration.validatePhoneNumber,
+            captureLeadName: integration.captureLeadName !== false,
+            captureLeadEmail: integration.captureLeadEmail !== false,
+            captureLeadPhoneNumber: integration.captureLeadPhoneNumber !== false,
             conversationStyle: integration.conversationStyle || false,
+            captureFeedbackEnabled: !!integration.captureFeedbackEnabled,
             googleReviewEnabled: integration.googleReviewEnabled || false,
             googleReviewUrl: integration.googleReviewUrl || null,
             calendarConnected: !!integration.googleCalendarConnected,
