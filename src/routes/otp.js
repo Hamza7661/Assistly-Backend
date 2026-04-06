@@ -35,7 +35,7 @@ class OtpController {
   async sendEmailOtp(req, res, next) {
     try {
       const { id: userId } = req.params;
-      const { email, htmlTemplate } = req.body;
+      const { email, htmlTemplate, branding, supportEmail, companyName } = req.body;
 
       // Validate request body
       const { error } = sendEmailOtpValidationSchema.validate({ email });
@@ -79,7 +79,10 @@ class OtpController {
 
       const templateData = {
         htmlTemplate,
-        textContent: `Your verification code is: ${otp}. This code will expire in 10 minutes.`
+        textContent: `Your verification code is: ${otp}. This code will expire in 10 minutes.`,
+        branding,
+        supportEmail,
+        companyName,
       };
 
       await this.emailService.sendOtpEmail(emailData, templateData);

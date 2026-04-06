@@ -1,6 +1,11 @@
 const sgMail = require('@sendgrid/mail');
 const { logger } = require('./logger');
-const { getCompanyTheme, buildCustomerConfirmationHtml, buildBusinessNotificationHtml } = require('./emailTemplates');
+const {
+  getCompanyTheme,
+  buildCustomerConfirmationHtml,
+  buildBusinessNotificationHtml,
+  buildFacelismVerificationCodeHtml,
+} = require('./emailTemplates');
 
 class EmailService {
   constructor() {
@@ -208,13 +213,35 @@ class EmailService {
       throw new Error('OTP code is required');
     }
 
-    if (!templateData.htmlTemplate) {
+    const rawBrand =
+      templateData?.branding ||
+      templateData?.brand ||
+      templateData?.companyName ||
+      '';
+    const normalizedBrand = String(rawBrand).trim().toLowerCase();
+    const isFacelismBranding =
+      normalizedBrand === 'facelism' ||
+      normalizedBrand === 'facelism luxe' ||
+      normalizedBrand.replace(/[^a-z0-9]/g, '') === 'facelism';
+
+    if (!templateData.htmlTemplate && !isFacelismBranding) {
       throw new Error('HTML template is required');
     }
 
     // Replace placeholders in HTML content with real data
     let htmlContent = templateData.htmlTemplate;
     let textContent = templateData.textContent;
+
+    if (isFacelismBranding) {
+      htmlContent = buildFacelismVerificationCodeHtml({
+        customerName: firstName || 'Customer',
+        otp,
+        supportEmail: templateData?.supportEmail || 'support@facelism.com',
+      });
+      textContent =
+        textContent ||
+        `Hello ${firstName || 'Customer'}, your Facelism verification code is ${otp}. This code will expire in 10 minutes.`;
+    }
 
     // Replace OTP placeholders
     if (htmlContent) {
@@ -231,10 +258,13 @@ class EmailService {
 
     const emailData = {
       to: email,
-      subject: process.env.EMAIL_OTP_SUBJECT || 'Your Verification Code - UpZilo',
+      subject: isFacelismBranding
+        ? (process.env.EMAIL_OTP_SUBJECT_FACELISM || 'Your Verification Code - Facelism')
+        : (process.env.EMAIL_OTP_SUBJECT || 'Your Verification Code - UpZilo'),
       htmlContent: htmlContent,
       textContent: textContent,
-      templateId: templateData.templateId
+      templateId: templateData.templateId,
+      ...(isFacelismBranding ? { fromName: process.env.FACELISM_FROM_NAME || 'Facelism' } : {})
     };
 
     return this.sendEmail(emailData);
