@@ -47,6 +47,7 @@ function buildLeadBroadcastPayload(lead) {
     initialInteraction: lead.initialInteraction,
     clickedItems: lead.clickedItems,
     appointmentDetails: lead.appointmentDetails,
+    userFeedback: lead.userFeedback,
     leadTypeSwitchHistory: lead.leadTypeSwitchHistory,
     summary: lead.summary,
     description: lead.description,
