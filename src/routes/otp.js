@@ -39,7 +39,7 @@ class OtpController {
   async sendEmailOtp(req, res, next) {
     try {
       const { id: userId } = req.params;
-      const { email, htmlTemplate, branding, supportEmail, companyName, appId } = req.body;
+      const { email, htmlTemplate, branding, supportEmail, companyName, appId, customerName } = req.body;
 
       // Validate request body
       const { error } = sendEmailOtpValidationSchema.validate({ email });
@@ -75,9 +75,10 @@ class OtpController {
       await otpRecord.save();
 
       // Send email
+      const resolvedCustomerName = String(customerName || '').trim();
       const emailData = {
         email,
-        firstName: 'Customer', // Could be enhanced to get from user data
+        firstName: resolvedCustomerName || 'Customer',
         otp
       };
 
