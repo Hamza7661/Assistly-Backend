@@ -35,6 +35,7 @@ function mergeClientContext(existing, incoming) {
 function buildLeadBroadcastPayload(lead) {
   return {
     _id: lead._id,
+    appId: lead.appId,
     title: lead.title,
     leadName: lead.leadName,
     leadEmail: lead.leadEmail,
