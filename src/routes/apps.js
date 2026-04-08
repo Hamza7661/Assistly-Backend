@@ -1159,7 +1159,7 @@ class AppController {
       // Find the app by Twilio phone number (uses usesTwilioNumber when multiple apps share the number)
       const app = await App.findByTwilioPhone(twilioPhoneNumber)
         .populate('owner', 'firstName lastName professionDescription website')
-        .select('_id name industry owner')
+        .select('_id name industry owner twilioSubaccountSid +twilioSubaccountAuthTokenEnc')
         .exec();
 
       if (app) {
@@ -1177,13 +1177,28 @@ class AppController {
       const user = app.owner;
       const appId = app._id;
 
+      // Resolve effective Twilio credentials for this app (subaccount first, then main account).
+      const subToken = app.twilioSubaccountAuthTokenEnc
+        ? decryptAuthToken(app.twilioSubaccountAuthTokenEnc)
+        : null;
+      const effectiveTwilioAccountSid = app.twilioSubaccountSid || process.env.TWILIO_ACCOUNT_SID || null;
+      const effectiveTwilioAuthToken = subToken || process.env.TWILIO_AUTH_TOKEN || null;
+
+      const withTwilioCredentials = (payload) => {
+        if (!payload || typeof payload !== 'object') return payload;
+        const out = { ...payload, data: { ...(payload.data || {}) } };
+        out.data.twilioAccountSid = effectiveTwilioAccountSid;
+        out.data.twilioAuthToken = effectiveTwilioAuthToken;
+        return out;
+      };
+
       // Check cache first
       const cacheKey = cacheManager.getAppContextKey(appId);
       const cachedData = await cacheManager.get(cacheKey);
       
       if (cachedData) {
         logger.info('App context served from cache (by Twilio number)', { twilioPhoneNumber, appId });
-        return res.status(200).json(cachedData);
+        return res.status(200).json(withTwilioCredentials(cachedData));
       }
 
       // Fetch app-specific data (app-wise flow, no user fallback)
@@ -1412,12 +1427,22 @@ class AppController {
           faq,
           integration: integrationData,
           workflows,
-          country: process.env.COUNTRY
+          country: process.env.COUNTRY,
+          twilioAccountSid: effectiveTwilioAccountSid,
+          twilioAuthToken: effectiveTwilioAuthToken
         }
       };
 
-      // Cache the response for 5 minutes
-      await cacheManager.set(cacheKey, responseData, 300);
+      // Cache the response for 5 minutes (exclude Twilio secrets from cache storage).
+      const responseDataForCache = {
+        ...responseData,
+        data: {
+          ...responseData.data,
+          twilioAccountSid: null,
+          twilioAuthToken: null
+        }
+      };
+      await cacheManager.set(cacheKey, responseDataForCache, 300);
 
       logger.info('App context retrieved by Twilio phone number (app-wise)', { 
         twilioPhoneNumber, 
