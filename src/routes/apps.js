@@ -780,6 +780,16 @@ class AppController {
       if (!num || !num.startsWith('+')) {
         throw new AppError('Valid phoneNumber (E.164) is required', 400);
       }
+      // Verify that the number being registered matches the one purchased/assigned for this app.
+      // This prevents a user from accidentally (or intentionally) registering a different number.
+      const appPhone = (appFull.twilioPhoneNumber || '').trim();
+      const normalise = (n) => n.replace(/\s+/g, '').replace(/^\+/, '');
+      if (appPhone && normalise(num) !== normalise(appPhone)) {
+        throw new AppError(
+          `Phone number mismatch: the number being registered (${num}) does not match the number purchased for this app (${appPhone}). Please use the number assigned to this app.`,
+          400
+        );
+      }
       const waba = (wabaId != null && String(wabaId).trim()) ? String(wabaId).trim() : null;
       if (!waba) {
         throw new AppError('wabaId from Meta Embedded Signup is required', 400);
@@ -979,6 +989,67 @@ class AppController {
   /**
    * List available phone numbers for a country (SMS+voice). Query: countryCode (e.g. US, GB). Optional: limit (default 20).
    */
+  /**
+   * Poll recent SMS messages to the app's Twilio phone number.
+   * Used by the frontend during Meta embedded signup to surface the OTP code
+   * sent by Meta to the Twilio-owned number.
+   */
+  async getLatestSms(req, res, next) {
+    try {
+      const userId = req.user.id;
+      const { id } = req.params;
+      await AppController.verifyAppOwnership(id, userId);
+      const appFull = await App.findById(id).select('+twilioSubaccountAuthTokenEnc');
+      if (!appFull?.twilioPhoneNumber) {
+        return res.status(200).json({ status: 'success', data: { messages: [] } });
+      }
+
+      const accountSid = appFull.twilioPhoneOnParent
+        ? process.env.TWILIO_ACCOUNT_SID
+        : appFull.twilioSubaccountSid;
+      const authToken = appFull.twilioPhoneOnParent
+        ? process.env.TWILIO_AUTH_TOKEN
+        : decryptAuthToken(appFull.twilioSubaccountAuthTokenEnc);
+
+      if (!accountSid || !authToken) {
+        return res.status(200).json({ status: 'success', data: { messages: [] } });
+      }
+
+      // Fetch messages received in the last hour
+      const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      const https = require('https');
+      const to = encodeURIComponent(appFull.twilioPhoneNumber);
+      const auth = Buffer.from(`${accountSid}:${authToken}`).toString('base64');
+
+      const messages = await new Promise((resolve, reject) => {
+        const req2 = https.request({
+          hostname: 'api.twilio.com',
+          path: `/2010-04-01/Accounts/${accountSid}/Messages.json?To=${to}&PageSize=10`,
+          method: 'GET',
+          headers: { Authorization: `Basic ${auth}` }
+        }, (res2) => {
+          let body = '';
+          res2.on('data', (c) => { body += c; });
+          res2.on('end', () => {
+            try { resolve(JSON.parse(body).messages || []); } catch { resolve([]); }
+          });
+        });
+        req2.on('error', reject);
+        req2.end();
+      });
+
+      // Extract 6-digit OTP codes from message bodies
+      const results = messages.map((m) => {
+        const code = (m.body || '').match(/\b(\d{6})\b/)?.[1] || null;
+        return { from: m.from, body: m.body, dateSent: m.date_sent, otp: code };
+      });
+
+      return res.status(200).json({ status: 'success', data: { messages: results } });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async getAvailableNumbers(req, res, next) {
     try {
       const userId = req.user.id;
@@ -2000,6 +2071,7 @@ router.get('/by-social-sender/:socialSenderId/context', verifySignedThirdPartyFo
 router.post('/:id/facebook/connect', authenticateToken, appController.connectFacebook.bind(appController));
 router.post('/:id/facebook/disconnect', authenticateToken, appController.disconnectFacebook.bind(appController));
 router.get('/:id/available-numbers', authenticateToken, appController.getAvailableNumbersForApp);
+router.get('/:id/latest-sms', authenticateToken, appController.getLatestSms);
 router.post('/:id/provision-number', authenticateToken, appController.provisionNumberForApp);
 router.post('/:id/restore', authenticateToken, appController.restoreApp);
 router.post('/:id/assign-number', authenticateToken, appController.assignNumber);
