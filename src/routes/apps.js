@@ -785,7 +785,15 @@ class AppController {
         throw new AppError('wabaId from Meta Embedded Signup is required', 400);
       }
 
-      const senderService = createWhatsAppSenderServiceForAccount(appFull.twilioSubaccountSid, subToken);
+      // If the phone number is owned by the parent account (e.g. GB Mobile with regulatory bundle),
+      // the WhatsApp sender must also be created under the parent — the subaccount doesn't own the number.
+      const senderAccountSid = appFull.twilioPhoneOnParent
+        ? process.env.TWILIO_ACCOUNT_SID
+        : appFull.twilioSubaccountSid;
+      const senderAuthToken = appFull.twilioPhoneOnParent
+        ? process.env.TWILIO_AUTH_TOKEN
+        : subToken;
+      const senderService = createWhatsAppSenderServiceForAccount(senderAccountSid, senderAuthToken);
       const apiPrefix = process.env.API_PREFIX || '/api';
       const apiVersion = process.env.API_VERSION || 'v1';
       const backendUrl = (process.env.BACKEND_URL || process.env.API_BASE_URL || '').replace(/\/$/, '');
@@ -848,7 +856,10 @@ class AppController {
           countryCode: code,
           numbers: numbers.map((n) => ({
             phoneNumber: n.phoneNumber,
-            friendlyName: n.friendlyName || n.phoneNumber
+            friendlyName: n.friendlyName || n.phoneNumber,
+            capabilities: n.capabilities,
+            monthlyPrice: n.monthlyPrice,
+            priceUnit: n.priceUnit
           }))
         }
       });
@@ -879,35 +890,82 @@ class AppController {
         throw new AppError('Valid countryCode (ISO 3166-1 alpha-2) is required', 400);
       }
       const phoneService = createTwilioPhoneServiceForAccount(appFull.twilioSubaccountSid, token);
+      const num = requestedNumber && String(requestedNumber).trim().startsWith('+')
+        ? String(requestedNumber).trim()
+        : null;
+
       let result;
-      if (requestedNumber && String(requestedNumber).trim().startsWith('+')) {
-        result = await phoneService.purchaseNumber(String(requestedNumber).trim());
+
+      // GB mobile numbers require a regulatory bundle that lives on the PARENT account.
+      // Bundles are NOT accessible when purchasing with subaccount credentials — Twilio returns
+      // "Bundle not found". The correct approach: purchase via the parent client scoped to the
+      // subaccount (client.api.accounts(subaccountSid).incomingPhoneNumbers.create), which
+      // makes the parent's bundle SID accessible while assigning the number to the subaccount.
+      const gbBundleSid = code === 'GB' ? process.env.TWILIO_GB_MOBILE_BUNDLE_SID : null;
+      const gbAddressSid = code === 'GB' ? process.env.TWILIO_GB_MOBILE_ADDRESS_SID : null;
+
+      if (gbBundleSid) {
+        const parentService = getTwilioPhoneService(); // parent credentials from env
+        // Only pass bundleSid — the address is embedded inside the bundle's regulatory profile.
+        // Passing addressSid separately causes "Could not find address" when scoped to the subaccount
+        // because the address SID lives on the parent, not the subaccount.
+        const bundleOptions = { bundleSid: gbBundleSid };
+        try {
+          if (num) {
+            result = await parentService.purchaseNumberOnSubaccount(num, appFull.twilioSubaccountSid, bundleOptions);
+          } else {
+            // Find a number first using subaccount, then buy via parent
+            const available = await phoneService.getAvailableNumbers(code, { limit: 1 });
+            if (!available || available.length === 0) {
+              throw new AppError(`No available numbers for country ${code}`, 404);
+            }
+            result = await parentService.purchaseNumberOnSubaccount(available[0].phoneNumber, appFull.twilioSubaccountSid, bundleOptions);
+          }
+        } catch (bundleErr) {
+          // Do NOT fall back to subaccount purchase without bundle — UK Mobile always requires
+          // a bundle and the number may already have been purchased on the parent in a partial
+          // failure, making it unavailable for a retry on the subaccount.
+          logger.error('GB purchase via parent failed', { error: bundleErr.message });
+          throw bundleErr;
+        }
       } else {
-        result = await phoneService.assignFirstAvailableNumber(code);
+        if (num) {
+          result = await phoneService.purchaseNumber(num, {});
+        } else {
+          result = await phoneService.assignFirstAvailableNumber(code, {});
+        }
       }
       if (!result) {
         throw new AppError(`No available numbers for country ${code}`, 404);
       }
-      const { phoneNumber } = result;
+      const { phoneNumber, sid: numberSid } = result;
       app.twilioPhoneNumber = phoneNumber;
       app.whatsappNumber = phoneNumber;
       app.whatsappNumberSource = 'twilio-provided';
       app.whatsappNumberStatus = 'pending';
-      const num = phoneNumber;
+      // GB Mobile numbers are purchased on the parent account (regulatory bundle lives there).
+      // Mark the app so downstream services (WhatsApp sender, voice context) use parent credentials.
+      if (gbBundleSid) {
+        app.twilioPhoneOnParent = true;
+        if (numberSid) app.twilioParentNumberSid = numberSid;
+      } else {
+        app.twilioPhoneOnParent = false;
+        app.twilioParentNumberSid = null;
+      }
       const othersWithSameNumber = await App.countDocuments({
         owner: userId,
         _id: { $ne: app._id },
         isActive: true,
         $and: [
           { $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] },
-          { $or: [{ whatsappNumber: num }, { twilioPhoneNumber: num }] }
+          { $or: [{ whatsappNumber: phoneNumber }, { twilioPhoneNumber: phoneNumber }] }
         ]
       });
       if (othersWithSameNumber === 0) {
         app.usesTwilioNumber = true;
       }
       await app.save();
-      logger.info('Number provisioned on app subaccount', { appId: app._id, phoneNumber });
+      logger.info('Number provisioned', { appId: app._id, phoneNumber, onParent: !!gbBundleSid });
       res.status(200).json({
         status: 'success',
         message: 'Number purchased. Complete Meta WhatsApp registration below.',
@@ -939,7 +997,13 @@ class AppController {
         status: 'success',
         data: {
           countryCode: code,
-          numbers: numbers.map((n) => ({ phoneNumber: n.phoneNumber, friendlyName: n.friendlyName || n.phoneNumber }))
+          numbers: numbers.map((n) => ({
+            phoneNumber: n.phoneNumber,
+            friendlyName: n.friendlyName || n.phoneNumber,
+            capabilities: n.capabilities,
+            monthlyPrice: n.monthlyPrice,
+            priceUnit: n.priceUnit
+          }))
         }
       });
     } catch (error) {
@@ -1177,18 +1241,29 @@ class AppController {
       const user = app.owner;
       const appId = app._id;
 
-      // Resolve effective Twilio credentials for this app (subaccount first, then main account).
+      // Resolve effective Twilio credentials for this app.
+      // GB Mobile numbers are purchased on the parent account (regulatory bundle constraint) —
+      // use parent credentials so the AI service can make/receive calls and configure webhooks
+      // on the correct account that actually owns the number.
       const subToken = app.twilioSubaccountAuthTokenEnc
         ? decryptAuthToken(app.twilioSubaccountAuthTokenEnc)
         : null;
-      const effectiveTwilioAccountSid = app.twilioSubaccountSid || process.env.TWILIO_ACCOUNT_SID || null;
-      const effectiveTwilioAuthToken = subToken || process.env.TWILIO_AUTH_TOKEN || null;
+      const effectiveTwilioAccountSid = app.twilioPhoneOnParent
+        ? (process.env.TWILIO_ACCOUNT_SID || null)
+        : (app.twilioSubaccountSid || process.env.TWILIO_ACCOUNT_SID || null);
+      const effectiveTwilioAuthToken = app.twilioPhoneOnParent
+        ? (process.env.TWILIO_AUTH_TOKEN || null)
+        : (subToken || process.env.TWILIO_AUTH_TOKEN || null);
 
       const withTwilioCredentials = (payload) => {
         if (!payload || typeof payload !== 'object') return payload;
         const out = { ...payload, data: { ...(payload.data || {}) } };
         out.data.twilioAccountSid = effectiveTwilioAccountSid;
         out.data.twilioAuthToken = effectiveTwilioAuthToken;
+        // Expose whether the number lives on the parent account and its SID,
+        // so the AI service can configure voice webhooks on the correct account.
+        out.data.twilioPhoneOnParent = !!app.twilioPhoneOnParent;
+        out.data.twilioPhoneNumberSid = app.twilioParentNumberSid || null;
         return out;
       };
 

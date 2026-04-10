@@ -100,6 +100,23 @@ const appSchema = new mongoose.Schema({
     default: false,
     index: true
   },
+  /**
+   * True when the Twilio phone number is owned by the PARENT account rather than the subaccount.
+   * This happens for GB Mobile numbers: they require a regulatory bundle that lives on the parent,
+   * so they are purchased on the parent and NOT transferred (transfer also requires a subaccount bundle).
+   * When true, all Twilio operations on this number (WhatsApp sender, voice, context) must use
+   * parent credentials (TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN) instead of the subaccount.
+   */
+  twilioPhoneOnParent: {
+    type: Boolean,
+    default: false
+  },
+  /** Twilio IncomingPhoneNumber SID (PN...) when the number is owned by the parent account. */
+  twilioParentNumberSid: {
+    type: String,
+    trim: true,
+    default: null
+  },
   /** Facebook Page ID for Messenger/Instagram (Twilio sender). Used for context lookup when messages arrive on this channel. */
   facebookPageId: {
     type: String,
