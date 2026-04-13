@@ -1133,8 +1133,15 @@ class AppController {
       const subToken = appFull?.twilioSubaccountAuthTokenEnc
         ? decryptAuthToken(appFull.twilioSubaccountAuthTokenEnc)
         : null;
-      const twilioAccountSid = appFull?.twilioSubaccountSid || process.env.TWILIO_ACCOUNT_SID;
-      const twilioAuthToken = subToken || process.env.TWILIO_AUTH_TOKEN;
+      // SID/token must come from the same account.
+      // If subaccount token is unavailable, fall back to parent credentials as a pair.
+      const hasSubaccountCreds = Boolean(appFull?.twilioSubaccountSid && subToken);
+      const twilioAccountSid = hasSubaccountCreds
+        ? appFull.twilioSubaccountSid
+        : process.env.TWILIO_ACCOUNT_SID;
+      const twilioAuthToken = hasSubaccountCreds
+        ? subToken
+        : process.env.TWILIO_AUTH_TOKEN;
       if (!twilioAccountSid || !twilioAuthToken) {
         throw new AppError('Twilio credentials are not configured for this app.', 503);
       }
