@@ -13,6 +13,7 @@ const { Integration } = require('../models/Integration');
 const { Questionnaire, QUESTIONNAIRE_TYPES } = require('../models/Questionnaire');
 const { QuestionType } = require('../models/QuestionType');
 const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
+const { AppPlan } = require('../models/AppPlan');
 const { getTwilioPhoneService, createTwilioPhoneServiceForAccount } = require('../services/twilioPhoneService');
 const { getWhatsAppSenderService, createWhatsAppSenderServiceForAccount } = require('../services/whatsappSenderService');
 const { createTwilioSubaccount } = require('../services/twilioSubaccountService');
@@ -38,6 +39,19 @@ function getDefaultIntegrationConfig() {
 function slugifyLeadValue(text) {
   if (!text || typeof text !== 'string') return '';
   return text.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') || '';
+}
+
+function serializeBookingBlock(bb) {
+  if (!bb || typeof bb !== 'object') return null;
+  return {
+    enabled: !!bb.enabled,
+    bookingQuestionText: bb.bookingQuestionText || 'Would you like to book an appointment?',
+    onYesNextQuestionId: bb.onYesNextQuestionId ? String(bb.onYesNextQuestionId) : null,
+    onNoNextQuestionId: bb.onNoNextQuestionId ? String(bb.onNoNextQuestionId) : null,
+    postBookingInstructions: bb.postBookingInstructions || '',
+    cancellationReasonEnabled: !!bb.cancellationReasonEnabled,
+    respectLeadCaptureFlags: bb.respectLeadCaptureFlags !== false
+  };
 }
 
 async function loadQuestionTypeCodeById() {
@@ -1352,7 +1366,7 @@ class AppController {
       
       const treatmentPromise = Questionnaire.find({ owner: appId, type: QUESTIONNAIRE_TYPES.SERVICE_PLAN, isActive: true })
         .select('question answer attachedWorkflows')
-        .populate('attachedWorkflows.workflowId', 'title question questionTypeId choiceInputMode options isRoot order')
+        .populate('attachedWorkflows.workflowId', 'title question questionTypeId choiceInputMode options isRoot order bookingBlock')
         .sort({ updatedAt: -1 })
         .exec();
 
@@ -1364,16 +1378,19 @@ class AppController {
       // App-wise: Only look for Integration by appId (no user fallback)
       const integrationPromise = Integration.findOne({ owner: appId }).exec();
 
+      const appPlanPromise = AppPlan.findOne({ appId }).lean().exec();
+
       const workflowPromise = ChatbotWorkflow.find({ owner: appId })
-        .select('title question questionTypeId choiceInputMode options attachment.hasFile attachment.filename attachment.contentType isRoot order workflowGroupId isActive')
+        .select('title question questionTypeId choiceInputMode options attachment.hasFile attachment.filename attachment.contentType bookingBlock isRoot order workflowGroupId isActive')
         .sort({ order: 1, createdAt: 1 })
         .exec();
 
-      const [treatmentDocs, faqDocs, integration, workflowDocs] = await Promise.all([
-        treatmentPromise, 
-        faqPromise, 
-        integrationPromise, 
-        workflowPromise
+      const [treatmentDocs, faqDocs, integration, workflowDocs, appPlanDoc] = await Promise.all([
+        treatmentPromise,
+        faqPromise,
+        integrationPromise,
+        workflowPromise,
+        appPlanPromise
       ]);
 
       // Get default question type
@@ -1403,7 +1420,8 @@ class AppController {
               choiceInputMode: aw.workflowId.choiceInputMode || 'button',
               options: aw.workflowId.options || [],
               isRoot: aw.workflowId.isRoot,
-              order: aw.workflowId.order
+              order: aw.workflowId.order,
+              bookingBlock: serializeBookingBlock(aw.workflowId.bookingBlock)
             } : null
           }))
       }));
@@ -1428,6 +1446,7 @@ class AppController {
             filename: w.attachment.filename || null,
             contentType: w.attachment.contentType || null
           } : { hasFile: false },
+          bookingBlock: serializeBookingBlock(w.bookingBlock),
           isRoot: w.isRoot,
           order: w.order,
           workflowGroupId: w.workflowGroupId,
@@ -1462,6 +1481,7 @@ class AppController {
                   filename: rootWorkflow.attachment.filename || null,
                   contentType: rootWorkflow.attachment.contentType || null
                 } : { hasFile: false },
+                bookingBlock: serializeBookingBlock(rootWorkflow.bookingBlock),
                 isRoot: rootWorkflow.isRoot,
                 order: rootWorkflow.order,
                 workflowGroupId: rootWorkflow.workflowGroupId,
@@ -1538,6 +1558,18 @@ class AppController {
       
       const workflows = rootWorkflows;
 
+      const appPlanPayload = appPlanDoc
+        ? {
+            channels: appPlanDoc.channels || {},
+            quotas: appPlanDoc.quotas || {},
+            addons: appPlanDoc.addons || { smsVerification: false },
+            resetCycle: appPlanDoc.resetCycle || 'monthly',
+            paymentCleared: !!appPlanDoc.paymentCleared,
+            paymentClearedAt: appPlanDoc.paymentClearedAt || null,
+            nextPaymentDue: appPlanDoc.nextPaymentDue || null
+          }
+        : null;
+
       // Prepare integration data
       const integrationData = integration ? {
         assistantName: integration.assistantName,
@@ -1573,6 +1605,7 @@ class AppController {
           faq,
           integration: integrationData,
           workflows,
+          appPlan: appPlanPayload,
           country: process.env.COUNTRY,
           twilioAccountSid: effectiveTwilioAccountSid,
           twilioAuthToken: effectiveTwilioAuthToken
@@ -1635,7 +1668,7 @@ class AppController {
       const userApp = { _id: app._id, name: app.name, industry: app.industry };
       const treatmentPromise = Questionnaire.find({ owner: appId, type: QUESTIONNAIRE_TYPES.SERVICE_PLAN, isActive: true })
         .select('question answer attachedWorkflows')
-        .populate('attachedWorkflows.workflowId', 'title question questionTypeId choiceInputMode options isRoot order')
+        .populate('attachedWorkflows.workflowId', 'title question questionTypeId choiceInputMode options isRoot order bookingBlock')
         .sort({ updatedAt: -1 })
         .exec();
       const faqPromise = Questionnaire.find({ owner: appId, type: QUESTIONNAIRE_TYPES.FAQ, isActive: true })
@@ -1643,12 +1676,13 @@ class AppController {
         .sort({ updatedAt: -1 })
         .exec();
       const integrationPromise = Integration.findOne({ owner: appId }).exec();
+      const appPlanPromise = AppPlan.findOne({ appId }).lean().exec();
       const workflowPromise = ChatbotWorkflow.find({ owner: appId })
-        .select('title question questionTypeId choiceInputMode options isRoot order workflowGroupId isActive')
+        .select('title question questionTypeId choiceInputMode options bookingBlock isRoot order workflowGroupId isActive')
         .sort({ order: 1, createdAt: 1 })
         .exec();
-      const [treatmentDocs, faqDocs, integration, workflowDocs] = await Promise.all([
-        treatmentPromise, faqPromise, integrationPromise, workflowPromise
+      const [treatmentDocs, faqDocs, integration, workflowDocs, appPlanDoc] = await Promise.all([
+        treatmentPromise, faqPromise, integrationPromise, workflowPromise, appPlanPromise
       ]);
       const defaultQuestionType = await QuestionType.findOne({ isActive: true }).sort({ id: 1 }).select('id').lean();
       const defaultQuestionTypeId = defaultQuestionType?.id || 1;
@@ -1671,7 +1705,8 @@ class AppController {
               choiceInputMode: aw.workflowId.choiceInputMode || 'button',
               options: aw.workflowId.options || [],
               isRoot: aw.workflowId.isRoot,
-              order: aw.workflowId.order
+              order: aw.workflowId.order,
+              bookingBlock: serializeBookingBlock(aw.workflowId.bookingBlock)
             } : null
           }))
       }));
@@ -1687,6 +1722,7 @@ class AppController {
           questionTypeCode: questionTypeCodeById.get(w.questionTypeId) || '',
           choiceInputMode: w.choiceInputMode || 'button',
           options: w.options || [],
+          bookingBlock: serializeBookingBlock(w.bookingBlock),
           isRoot: w.isRoot,
           order: w.order,
           workflowGroupId: w.workflowGroupId,
@@ -1712,6 +1748,7 @@ class AppController {
                 questionTypeCode: questionTypeCodeById.get(rootWorkflow.questionTypeId) || '',
                 choiceInputMode: rootWorkflow.choiceInputMode || 'button',
                 options: rootWorkflow.options || [],
+                bookingBlock: serializeBookingBlock(rootWorkflow.bookingBlock),
                 isRoot: rootWorkflow.isRoot,
                 order: rootWorkflow.order,
                 workflowGroupId: rootWorkflow.workflowGroupId,
@@ -1775,6 +1812,17 @@ class AppController {
         const bOrder = b.treatmentPlanOrder !== undefined ? b.treatmentPlanOrder : (b.order || 0);
         return aOrder !== bOrder ? aOrder - bOrder : (a.order || 0) - (b.order || 0);
       });
+      const appPlanPayloadSocial = appPlanDoc
+        ? {
+            channels: appPlanDoc.channels || {},
+            quotas: appPlanDoc.quotas || {},
+            addons: appPlanDoc.addons || { smsVerification: false },
+            resetCycle: appPlanDoc.resetCycle || 'monthly',
+            paymentCleared: !!appPlanDoc.paymentCleared,
+            paymentClearedAt: appPlanDoc.paymentClearedAt || null,
+            nextPaymentDue: appPlanDoc.nextPaymentDue || null
+          }
+        : null;
       const integrationData = integration ? {
         assistantName: integration.assistantName,
         companyName: integration.companyName || '',
@@ -1808,6 +1856,7 @@ class AppController {
           faq,
           integration: integrationData,
           workflows: rootWorkflows,
+          appPlan: appPlanPayloadSocial,
           country: process.env.COUNTRY,
           // Include Messenger credentials when this lookup is by Facebook Page ID
           messengerAccessToken: app.facebookPageAccessToken || null,

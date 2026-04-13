@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const morgan = require('morgan');
+const { CronJob } = require('cron');
 
 const databaseManager = require('./config/database');
 const securityMiddleware = require('./middleware/security');
@@ -29,6 +30,8 @@ const otpRoutes = require('./routes/otp');
 const chatbotWorkflowRoutes = require('./routes/chatbotWorkflow');
 const chatUploadRoutes = require('./routes/chatUpload');
 const subscriptionRoutes = require('./routes/subscriptions');
+const appPlanRoutes = require('./routes/appPlan');
+const { resetDueQuotas } = require('./services/quotaResetService');
 
 class Application {
   constructor() {
@@ -39,6 +42,7 @@ class Application {
     this.initializeMiddleware();
     this.initializeRoutes();
     this.initializeErrorHandling();
+    this.quotaResetJob = null;
   }
 
   initializeMiddleware() {
@@ -90,6 +94,7 @@ class Application {
     this.app.use(`${basePath}/chat-uploads`, securityMiddleware.getRateLimiters().api, chatUploadRoutes);
     // Note: webhook route is registered in initializeMiddleware() before JSON parsing
     this.app.use(`${basePath}/subscriptions`, subscriptionRoutes);
+    this.app.use(`${basePath}/app-plan`, securityMiddleware.getRateLimiters().api, appPlanRoutes);
 
     this.app.get('/', (req, res) => {
       res.json({
@@ -119,6 +124,8 @@ class Application {
 
       });
 
+      this.startQuotaResetCron();
+
       // Initialize WebSocket server
       websocketServer.initialize(server);
 
@@ -135,12 +142,35 @@ class Application {
     }
   }
 
+  startQuotaResetCron() {
+    if (this.quotaResetJob) return;
+    // Runs monthly at 00:01 UTC on day 1.
+    this.quotaResetJob = new CronJob(
+      '0 1 0 1 * *',
+      async () => {
+        try {
+          const { updatedPlans } = await resetDueQuotas(new Date());
+          logger.info('Monthly AppPlan quota reset completed', { updatedPlans });
+        } catch (error) {
+          logger.error('Monthly AppPlan quota reset failed', { error: error.message });
+        }
+      },
+      null,
+      true,
+      'UTC'
+    );
+    logger.info('Monthly AppPlan quota reset cron started (UTC 00:01 on day 1)');
+  }
+
   setupGracefulShutdown(server) {
     const gracefulShutdown = async (signal) => {
       logger.info(`Received ${signal}. Starting graceful shutdown...`);
       
       server.close(async () => {
         logger.info('HTTP server closed');
+        if (this.quotaResetJob) {
+          this.quotaResetJob.stop();
+        }
         
         try {
           await databaseManager.disconnect();

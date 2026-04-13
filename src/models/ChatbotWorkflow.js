@@ -73,6 +73,15 @@ const chatbotWorkflowSchema = new mongoose.Schema({
     filename: { type: String, default: null },
     size: { type: Number, default: null }
   },
+  bookingBlock: {
+    enabled: { type: Boolean, default: false },
+    bookingQuestionText: { type: String, default: 'Would you like to book an appointment?', maxlength: 500 },
+    onYesNextQuestionId: { type: mongoose.Schema.Types.ObjectId, ref: 'ChatbotWorkflow', default: null },
+    onNoNextQuestionId: { type: mongoose.Schema.Types.ObjectId, ref: 'ChatbotWorkflow', default: null },
+    postBookingInstructions: { type: String, default: '', maxlength: 4000 },
+    cancellationReasonEnabled: { type: Boolean, default: false },
+    respectLeadCaptureFlags: { type: Boolean, default: true }
+  },
   isRoot: {
     type: Boolean,
     default: false
@@ -117,6 +126,16 @@ const workflowOptionValidationSchema = Joi.object({
   order: Joi.number().optional()
 });
 
+const bookingBlockValidationSchema = Joi.object({
+  enabled: Joi.boolean().optional(),
+  bookingQuestionText: Joi.string().max(500).allow('', null).optional(),
+  onYesNextQuestionId: Joi.string().allow(null, '').optional(),
+  onNoNextQuestionId: Joi.string().allow(null, '').optional(),
+  postBookingInstructions: Joi.string().max(4000).allow('', null).optional(),
+  cancellationReasonEnabled: Joi.boolean().optional(),
+  respectLeadCaptureFlags: Joi.boolean().optional()
+}).allow(null);
+
 const workflowValidationSchema = Joi.object({
   title: Joi.string().max(200).required(),
   question: Joi.string().max(500).required(),
@@ -124,6 +143,7 @@ const workflowValidationSchema = Joi.object({
   choiceInputMode: Joi.string().valid('button', 'checkbox').optional(),
   workflowGroupId: Joi.string().allow(null, '').optional(),
   options: Joi.array().items(workflowOptionValidationSchema).optional(),
+  bookingBlock: bookingBlockValidationSchema.optional(),
   isRoot: Joi.boolean().optional(),
   isActive: Joi.boolean().optional(),
   order: Joi.number().optional()
@@ -136,6 +156,7 @@ const workflowUpdateValidationSchema = Joi.object({
   choiceInputMode: Joi.string().valid('button', 'checkbox').optional(),
   workflowGroupId: Joi.string().allow(null, '').optional(),
   options: Joi.array().items(workflowOptionValidationSchema).optional(),
+  bookingBlock: bookingBlockValidationSchema.optional(),
   isRoot: Joi.boolean().optional(),
   isActive: Joi.boolean().optional(),
   order: Joi.number().optional()

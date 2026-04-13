@@ -32,6 +32,22 @@ function mergeClientContext(existing, incoming) {
   return out;
 }
 
+/** Voice leads are created via signed server-to-server calls; req IP is the AI service, not the caller. */
+function mergePublicLeadClientContext(value, ctxFromReq) {
+  if (value.sourceChannel === 'voice') {
+    const vc = value.clientContext || {};
+    return {
+      browserName: vc.browserName ?? null,
+      browserVersion: vc.browserVersion ?? null,
+      osName: vc.osName ?? null,
+      deviceType: vc.deviceType || 'voice',
+      userAgent: vc.userAgent || null,
+      ipAddress: vc.ipAddress != null ? vc.ipAddress : null
+    };
+  }
+  return mergeClientContext(value.clientContext || {}, ctxFromReq);
+}
+
 function buildLeadBroadcastPayload(lead) {
   return {
     _id: lead._id,
@@ -377,7 +393,10 @@ router.post('/public/:userId', verifySignedThirdPartyForParamUser, async (req, r
       if (Array.isArray(mergeData.clickedItems) && mergeData.clickedItems.length === 0) delete mergeData.clickedItems;
       if (!mergeData.initialInteraction) delete mergeData.initialInteraction;
       if (existingOpenLead.status === 'in_progress' && mergeData.status === 'interacting') delete mergeData.status;
-      mergeData.clientContext = mergeClientContext(existingOpenLead.clientContext, mergeClientContext(value.clientContext, ctx));
+      mergeData.clientContext = mergeClientContext(
+        existingOpenLead.clientContext,
+        mergePublicLeadClientContext(value, ctx)
+      );
       Object.assign(existingOpenLead, mergeData);
       await existingOpenLead.save();
       websocketServer.broadcastToUser(userId, { lead: buildLeadBroadcastPayload(existingOpenLead) });
@@ -385,7 +404,7 @@ router.post('/public/:userId', verifySignedThirdPartyForParamUser, async (req, r
     }
 
     // Accept appId from body for app-scoped leads (from widget).
-    const leadData = { userId, ...value, clientContext: mergeClientContext(value.clientContext, ctx) };
+    const leadData = { userId, ...value, clientContext: mergePublicLeadClientContext(value, ctx) };
     const lead = new Lead(leadData);
     await lead.save();
     
