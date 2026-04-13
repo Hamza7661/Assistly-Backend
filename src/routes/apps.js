@@ -914,11 +914,20 @@ class AppController {
       }
       let numbers;
       try {
-        if (!sid || !token) {
-          throw new Error('Subaccount credentials unavailable for this request');
+        if (sid && token) {
+          const subPhoneService = createTwilioPhoneServiceForAccount(sid, token);
+          numbers = await subPhoneService.getAvailableNumbers(code, { limit: maxLimit });
+        } else {
+          if (code !== 'GB') {
+            throw new AppError('Subaccount credentials unavailable for this request', 500);
+          }
+          logger.warn('Subaccount credentials unavailable; using parent account fallback for available-numbers', {
+            appId: id,
+            countryCode: code
+          });
+          const parentPhoneService = getTwilioPhoneService();
+          numbers = await parentPhoneService.getAvailableNumbers(code, { limit: maxLimit });
         }
-        const subPhoneService = createTwilioPhoneServiceForAccount(sid, token);
-        numbers = await subPhoneService.getAvailableNumbers(code, { limit: maxLimit });
       } catch (subErr) {
         if (!AppController.shouldFallbackToParentForCountry(code, subErr)) {
           throw subErr;
@@ -983,14 +992,27 @@ class AppController {
       }
       let result;
       try {
-        if (!sid || !token) {
-          throw new Error('Subaccount credentials unavailable for this request');
-        }
-        const phoneService = createTwilioPhoneServiceForAccount(sid, token);
-        if (requestedNumber && String(requestedNumber).trim().startsWith('+')) {
-          result = await phoneService.purchaseNumber(String(requestedNumber).trim());
+        if (sid && token) {
+          const phoneService = createTwilioPhoneServiceForAccount(sid, token);
+          if (requestedNumber && String(requestedNumber).trim().startsWith('+')) {
+            result = await phoneService.purchaseNumber(String(requestedNumber).trim());
+          } else {
+            result = await phoneService.assignFirstAvailableNumber(code);
+          }
         } else {
-          result = await phoneService.assignFirstAvailableNumber(code);
+          if (code !== 'GB') {
+            throw new AppError('Subaccount credentials unavailable for this request', 500);
+          }
+          logger.warn('Subaccount credentials unavailable; using parent account fallback for provision-number', {
+            appId: id,
+            countryCode: code
+          });
+          const parentPhoneService = getTwilioPhoneService();
+          if (requestedNumber && String(requestedNumber).trim().startsWith('+')) {
+            result = await parentPhoneService.purchaseNumber(String(requestedNumber).trim());
+          } else {
+            result = await parentPhoneService.assignFirstAvailableNumber(code);
+          }
         }
       } catch (subErr) {
         if (!AppController.shouldFallbackToParentForCountry(code, subErr)) {
