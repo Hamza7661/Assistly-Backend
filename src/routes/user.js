@@ -18,6 +18,18 @@ function slugifyLeadValue(text) {
   return text.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') || '';
 }
 
+/** Map QuestionType.id -> code (e.g. multiple_choice) so the AI can render checkboxes without hardcoding id 2 */
+async function loadQuestionTypeCodeById() {
+  const rows = await QuestionType.find({ isActive: true }).select('id code').lean();
+  const map = new Map();
+  for (const t of rows || []) {
+    if (t && typeof t.id === 'number' && t.code) {
+      map.set(t.id, String(t.code).trim().toLowerCase());
+    }
+  }
+  return map;
+}
+
 // Use application-based lead type messages from Integration when present; otherwise fallback to default list
 // Normalize value from text on read so all apps/industries get correct routing even if DB had stale value
 function getLeadTypesFromIntegration(integration) {
@@ -156,8 +168,8 @@ class UserController {
         .exec();
 
       const treatmentPromise = Questionnaire.find({ owner: id, type: QUESTIONNAIRE_TYPES.SERVICE_PLAN, isActive: true })
-        .select('question answer attachedWorkflows')
-        .populate('attachedWorkflows.workflowId', 'title question questionTypeId isRoot order')
+        .select('question answer postBookingNote attachedWorkflows')
+        .populate('attachedWorkflows.workflowId', 'title question questionTypeId choiceInputMode options isRoot order')
         .sort({ updatedAt: -1 })
         .exec();
 
@@ -171,7 +183,7 @@ class UserController {
 
       const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
       const workflowPromise = ChatbotWorkflow.find({ owner: id })
-        .select('title question questionTypeId options attachment.hasFile attachment.filename attachment.contentType isRoot order workflowGroupId isActive')
+        .select('title question questionTypeId choiceInputMode options attachment.hasFile attachment.filename attachment.contentType isRoot order workflowGroupId isActive')
         .sort({ order: 1, createdAt: 1 })
         .exec();
 
@@ -187,10 +199,12 @@ class UserController {
         .select('id')
         .lean();
       const defaultQuestionTypeId = defaultQuestionType?.id || 1;
+      const questionTypeCodeById = await loadQuestionTypeCodeById();
 
       const treatmentPlans = treatmentDocs.map(d => ({
         question: d.question,
         answer: d.answer,
+        postBookingNote: d.postBookingNote || '',
         attachedWorkflows: (d.attachedWorkflows || [])
           .filter(aw => aw.workflowId)
           .sort((a, b) => (a.order || 0) - (b.order || 0))
@@ -202,6 +216,9 @@ class UserController {
               title: aw.workflowId.title,
               question: aw.workflowId.question,
               questionTypeId: aw.workflowId.questionTypeId,
+              questionTypeCode: questionTypeCodeById.get(aw.workflowId.questionTypeId) || '',
+              choiceInputMode: aw.workflowId.choiceInputMode || 'button',
+              options: aw.workflowId.options || [],
               isRoot: aw.workflowId.isRoot,
               order: aw.workflowId.order
             } : null
@@ -219,6 +236,8 @@ class UserController {
           title: w.title,
           question: w.question,
           questionTypeId: w.questionTypeId,
+          questionTypeCode: questionTypeCodeById.get(w.questionTypeId) || '',
+          choiceInputMode: w.choiceInputMode || 'button',
           options: w.options || [],
           attachment: w.attachment ? {
             hasFile: !!w.attachment.hasFile,
@@ -234,11 +253,16 @@ class UserController {
         if (w.isRoot || !w.workflowGroupId) {
           // This is a root workflow
           const groupId = w._id.toString();
-          workflowMap[groupId] = {
-            ...workflowData,
-            questions: [] // Will contain ordered questions
-          };
-          rootWorkflows.push(workflowMap[groupId]);
+          if (workflowMap[groupId]) {
+            // Children were already collected before this root doc was processed
+            // (root has a higher order value). Update metadata but keep questions.
+            const existingQuestions = workflowMap[groupId].questions || [];
+            workflowMap[groupId] = { ...workflowData, questions: existingQuestions };
+            // Already in rootWorkflows - do NOT push again
+          } else {
+            workflowMap[groupId] = { ...workflowData, questions: [] };
+            rootWorkflows.push(workflowMap[groupId]);
+          }
         } else {
           // This is a question within a workflow
           const groupId = w.workflowGroupId ? w.workflowGroupId.toString() : w._id.toString();
@@ -254,6 +278,8 @@ class UserController {
                 title: rootWorkflow.title,
                 question: rootWorkflow.question,
                 questionTypeId: rootWorkflow.questionTypeId,
+                questionTypeCode: questionTypeCodeById.get(rootWorkflow.questionTypeId) || '',
+                choiceInputMode: rootWorkflow.choiceInputMode || 'button',
                 options: rootWorkflow.options || [],
                 attachment: rootWorkflow.attachment ? {
                   hasFile: !!rootWorkflow.attachment.hasFile,
@@ -274,6 +300,8 @@ class UserController {
                 title: 'Unnamed Workflow',
                 question: '',
                 questionTypeId: defaultQuestionTypeId,
+                questionTypeCode: questionTypeCodeById.get(defaultQuestionTypeId) || '',
+                choiceInputMode: 'button',
                 isRoot: true,
                 order: 0,
                 isActive: true,
@@ -352,7 +380,11 @@ class UserController {
         greeting: integration.greeting,
         validateEmail: integration.validateEmail,
         validatePhoneNumber: integration.validatePhoneNumber,
+        captureLeadName: integration.captureLeadName !== false,
+        captureLeadEmail: integration.captureLeadEmail !== false,
+        captureLeadPhoneNumber: integration.captureLeadPhoneNumber !== false,
         conversationStyle: integration.conversationStyle || false,
+        captureFeedbackEnabled: !!integration.captureFeedbackEnabled,
         googleReviewEnabled: !!integration.googleReviewEnabled,
         googleReviewUrl: integration.googleReviewUrl || null
       } : {
@@ -361,7 +393,11 @@ class UserController {
         greeting: process.env.DEFAULT_GREETING || 'Hi this is {assistantName} your virtual ai assistant from {companyName}. How can I help you today?',
         validateEmail: true,
         validatePhoneNumber: true,
+        captureLeadName: true,
+        captureLeadEmail: true,
+        captureLeadPhoneNumber: true,
         conversationStyle: false,
+        captureFeedbackEnabled: false,
         googleReviewEnabled: false,
         googleReviewUrl: null
       };
@@ -421,8 +457,8 @@ class UserController {
       const userId = user._id;
 
       const treatmentPromise = Questionnaire.find({ owner: appId, type: QUESTIONNAIRE_TYPES.SERVICE_PLAN, isActive: true })
-        .select('question answer attachedWorkflows')
-        .populate('attachedWorkflows.workflowId', 'title question questionTypeId isRoot order')
+        .select('question answer postBookingNote attachedWorkflows')
+        .populate('attachedWorkflows.workflowId', 'title question questionTypeId choiceInputMode options isRoot order')
         .sort({ updatedAt: -1 })
         .exec();
 
@@ -443,7 +479,7 @@ class UserController {
 
       const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
       const workflowPromise = ChatbotWorkflow.find({ owner: appId })
-        .select('title question questionTypeId options attachment.hasFile attachment.filename attachment.contentType isRoot order workflowGroupId isActive')
+        .select('title question questionTypeId choiceInputMode options attachment.hasFile attachment.filename attachment.contentType isRoot order workflowGroupId isActive')
         .sort({ order: 1, createdAt: 1 })
         .exec();
 
@@ -454,10 +490,12 @@ class UserController {
         .select('id')
         .lean();
       const defaultQuestionTypeId = defaultQuestionType?.id || 1;
+      const questionTypeCodeById = await loadQuestionTypeCodeById();
 
       const treatmentPlans = treatmentDocs.map(d => ({
         question: d.question,
         answer: d.answer,
+        postBookingNote: d.postBookingNote || '',
         attachedWorkflows: (d.attachedWorkflows || [])
           .filter(aw => aw.workflowId)
           .sort((a, b) => (a.order || 0) - (b.order || 0))
@@ -469,6 +507,9 @@ class UserController {
               title: aw.workflowId.title,
               question: aw.workflowId.question,
               questionTypeId: aw.workflowId.questionTypeId,
+              questionTypeCode: questionTypeCodeById.get(aw.workflowId.questionTypeId) || '',
+              choiceInputMode: aw.workflowId.choiceInputMode || 'button',
+              options: aw.workflowId.options || [],
               isRoot: aw.workflowId.isRoot,
               order: aw.workflowId.order
             } : null
@@ -485,6 +526,8 @@ class UserController {
           title: w.title,
           question: w.question,
           questionTypeId: w.questionTypeId,
+          questionTypeCode: questionTypeCodeById.get(w.questionTypeId) || '',
+          choiceInputMode: w.choiceInputMode || 'button',
           options: w.options || [],
           attachment: w.attachment ? {
             hasFile: !!w.attachment.hasFile,
@@ -499,8 +542,16 @@ class UserController {
 
         if (w.isRoot || !w.workflowGroupId) {
           const groupId = w._id.toString();
-          workflowMap[groupId] = { ...workflowData, questions: [] };
-          rootWorkflows.push(workflowMap[groupId]);
+          if (workflowMap[groupId]) {
+            // Children were already collected before this root doc was processed
+            // (root has a higher order value). Update metadata but keep questions.
+            const existingQuestions = workflowMap[groupId].questions || [];
+            workflowMap[groupId] = { ...workflowData, questions: existingQuestions };
+            // Already in rootWorkflows — do NOT push again
+          } else {
+            workflowMap[groupId] = { ...workflowData, questions: [] };
+            rootWorkflows.push(workflowMap[groupId]);
+          }
         } else {
           const groupId = w.workflowGroupId ? w.workflowGroupId.toString() : w._id.toString();
           if (!workflowMap[groupId]) {
@@ -514,6 +565,8 @@ class UserController {
                 title: rootWorkflow.title,
                 question: rootWorkflow.question,
                 questionTypeId: rootWorkflow.questionTypeId,
+                questionTypeCode: questionTypeCodeById.get(rootWorkflow.questionTypeId) || '',
+                choiceInputMode: rootWorkflow.choiceInputMode || 'button',
                 options: rootWorkflow.options || [],
                 attachment: rootWorkflow.attachment ? {
                   hasFile: !!rootWorkflow.attachment.hasFile,
@@ -533,6 +586,8 @@ class UserController {
                 title: 'Unnamed Workflow',
                 question: '',
                 questionTypeId: defaultQuestionTypeId,
+                questionTypeCode: questionTypeCodeById.get(defaultQuestionTypeId) || '',
+                choiceInputMode: 'button',
                 isRoot: true,
                 order: 0,
                 isActive: true,
@@ -594,9 +649,16 @@ class UserController {
         greeting: integration.greeting,
         validateEmail: integration.validateEmail,
         validatePhoneNumber: integration.validatePhoneNumber,
+        captureLeadName: integration.captureLeadName !== false,
+        captureLeadEmail: integration.captureLeadEmail !== false,
+        captureLeadPhoneNumber: integration.captureLeadPhoneNumber !== false,
         conversationStyle: integration.conversationStyle || false,
+        captureFeedbackEnabled: !!integration.captureFeedbackEnabled,
         googleReviewEnabled: !!integration.googleReviewEnabled,
         googleReviewUrl: integration.googleReviewUrl || null,
+        calendarConnected: !!integration.googleCalendarConnected,
+        calendarSlotMinutes: integration.calendarSlotMinutes ?? 30,
+        calendarTimezone: integration.googleCalendarTimezone || null,
         leadTypeMessages: integration.leadTypeMessages || []
       } : {
         assistantName: 'Assistant',
@@ -604,9 +666,16 @@ class UserController {
         greeting: process.env.DEFAULT_GREETING || 'Hi this is {assistantName} your virtual ai assistant from {companyName}. How can I help you today?',
         validateEmail: true,
         validatePhoneNumber: true,
+        captureLeadName: true,
+        captureLeadEmail: true,
+        captureLeadPhoneNumber: true,
         conversationStyle: false,
+        captureFeedbackEnabled: false,
         googleReviewEnabled: false,
         googleReviewUrl: null,
+        calendarConnected: false,
+        calendarSlotMinutes: 30,
+        calendarTimezone: null,
         leadTypeMessages: []
       };
 
@@ -682,8 +751,8 @@ class UserController {
       const userApp = { _id: app._id, name: app.name, industry: app.industry };
       
       const treatmentPromise = Questionnaire.find({ owner: appId, type: QUESTIONNAIRE_TYPES.SERVICE_PLAN, isActive: true })
-        .select('question answer attachedWorkflows')
-        .populate('attachedWorkflows.workflowId', 'title question questionTypeId isRoot order')
+        .select('question answer postBookingNote attachedWorkflows')
+        .populate('attachedWorkflows.workflowId', 'title question questionTypeId choiceInputMode options isRoot order')
         .sort({ updatedAt: -1 })
         .exec();
 
@@ -704,7 +773,7 @@ class UserController {
 
       const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
       const workflowPromise = ChatbotWorkflow.find({ owner: appId })
-        .select('title question questionTypeId options attachment.hasFile attachment.filename attachment.contentType isRoot order workflowGroupId isActive')
+        .select('title question questionTypeId choiceInputMode options attachment.hasFile attachment.filename attachment.contentType isRoot order workflowGroupId isActive')
         .sort({ order: 1, createdAt: 1 })
         .exec();
 
@@ -716,10 +785,12 @@ class UserController {
         .select('id')
         .lean();
       const defaultQuestionTypeId = defaultQuestionType?.id || 1;
+      const questionTypeCodeById = await loadQuestionTypeCodeById();
 
       const treatmentPlans = treatmentDocs.map(d => ({
         question: d.question,
         answer: d.answer,
+        postBookingNote: d.postBookingNote || '',
         attachedWorkflows: (d.attachedWorkflows || [])
           .filter(aw => aw.workflowId)
           .sort((a, b) => (a.order || 0) - (b.order || 0))
@@ -731,6 +802,9 @@ class UserController {
               title: aw.workflowId.title,
               question: aw.workflowId.question,
               questionTypeId: aw.workflowId.questionTypeId,
+              questionTypeCode: questionTypeCodeById.get(aw.workflowId.questionTypeId) || '',
+              choiceInputMode: aw.workflowId.choiceInputMode || 'button',
+              options: aw.workflowId.options || [],
               isRoot: aw.workflowId.isRoot,
               order: aw.workflowId.order
             } : null
@@ -748,6 +822,8 @@ class UserController {
           title: w.title,
           question: w.question,
           questionTypeId: w.questionTypeId,
+          questionTypeCode: questionTypeCodeById.get(w.questionTypeId) || '',
+          choiceInputMode: w.choiceInputMode || 'button',
           options: w.options || [],
           attachment: w.attachment ? {
             hasFile: !!w.attachment.hasFile,
@@ -763,11 +839,16 @@ class UserController {
         if (w.isRoot || !w.workflowGroupId) {
           // This is a root workflow
           const groupId = w._id.toString();
-          workflowMap[groupId] = {
-            ...workflowData,
-            questions: [] // Will contain ordered questions
-          };
-          rootWorkflows.push(workflowMap[groupId]);
+          if (workflowMap[groupId]) {
+            // Children were already collected before this root doc was processed
+            // (root has a higher order value). Update metadata but keep questions.
+            const existingQuestions = workflowMap[groupId].questions || [];
+            workflowMap[groupId] = { ...workflowData, questions: existingQuestions };
+            // Already in rootWorkflows - do NOT push again
+          } else {
+            workflowMap[groupId] = { ...workflowData, questions: [] };
+            rootWorkflows.push(workflowMap[groupId]);
+          }
         } else {
           // This is a question within a workflow
           const groupId = w.workflowGroupId ? w.workflowGroupId.toString() : w._id.toString();
@@ -783,6 +864,8 @@ class UserController {
                 title: rootWorkflow.title,
                 question: rootWorkflow.question,
                 questionTypeId: rootWorkflow.questionTypeId,
+                questionTypeCode: questionTypeCodeById.get(rootWorkflow.questionTypeId) || '',
+                choiceInputMode: rootWorkflow.choiceInputMode || 'button',
                 options: rootWorkflow.options || [],
                 attachment: rootWorkflow.attachment ? {
                   hasFile: !!rootWorkflow.attachment.hasFile,
@@ -803,6 +886,8 @@ class UserController {
                 title: 'Unnamed Workflow',
                 question: '',
                 questionTypeId: defaultQuestionTypeId,
+                questionTypeCode: questionTypeCodeById.get(defaultQuestionTypeId) || '',
+                choiceInputMode: 'button',
                 isRoot: true,
                 order: 0,
                 isActive: true,
@@ -881,9 +966,16 @@ class UserController {
         greeting: integration.greeting,
         validateEmail: integration.validateEmail,
         validatePhoneNumber: integration.validatePhoneNumber,
+        captureLeadName: integration.captureLeadName !== false,
+        captureLeadEmail: integration.captureLeadEmail !== false,
+        captureLeadPhoneNumber: integration.captureLeadPhoneNumber !== false,
         conversationStyle: integration.conversationStyle || false,
+        captureFeedbackEnabled: !!integration.captureFeedbackEnabled,
         googleReviewEnabled: !!integration.googleReviewEnabled,
         googleReviewUrl: integration.googleReviewUrl || null,
+        calendarConnected: !!integration.googleCalendarConnected,
+        calendarSlotMinutes: integration.calendarSlotMinutes ?? 30,
+        calendarTimezone: integration.googleCalendarTimezone || null,
         leadTypeMessages: integration.leadTypeMessages || []
       } : {
         assistantName: 'Assistant',
@@ -891,9 +983,16 @@ class UserController {
         greeting: process.env.DEFAULT_GREETING || 'Hi this is {assistantName} your virtual ai assistant from {companyName}. How can I help you today?',
         validateEmail: true,
         validatePhoneNumber: true,
+        captureLeadName: true,
+        captureLeadEmail: true,
+        captureLeadPhoneNumber: true,
         conversationStyle: false,
+        captureFeedbackEnabled: false,
         googleReviewEnabled: false,
         googleReviewUrl: null,
+        calendarConnected: false,
+        calendarSlotMinutes: 30,
+        calendarTimezone: null,
         leadTypeMessages: []
       };
 

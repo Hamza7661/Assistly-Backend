@@ -1,5 +1,11 @@
 const sgMail = require('@sendgrid/mail');
 const { logger } = require('./logger');
+const {
+  getCompanyTheme,
+  buildCustomerConfirmationHtml,
+  buildBusinessNotificationHtml,
+  buildFacelismVerificationCodeHtml,
+} = require('./emailTemplates');
 
 class EmailService {
   constructor() {
@@ -36,7 +42,9 @@ class EmailService {
         htmlContent,
         textContent,
         dynamicTemplateData,
-        templateId
+        templateId,
+        fromName,
+        fromEmail,
       } = emailData;
 
       // Validate required fields
@@ -44,11 +52,17 @@ class EmailService {
         throw new Error('to, subject, and htmlContent are required');
       }
 
+      const resolvedFromName =
+        fromName !== undefined && fromName !== null && String(fromName).trim() !== ''
+          ? String(fromName).trim()
+          : process.env.FROM_NAME;
+      const resolvedFromEmail = (fromEmail && String(fromEmail).trim()) || process.env.FROM_EMAIL;
+
       const msg = {
         to,
         from: {
-          name: process.env.FROM_NAME,
-          email: process.env.FROM_EMAIL
+          name: resolvedFromName,
+          email: resolvedFromEmail
         },
         subject,
         html: htmlContent,
@@ -126,7 +140,7 @@ class EmailService {
     // Frontend provides complete HTML content, backend just sends it
     const emailData = {
       to: email,
-      subject: process.env.EMAIL_VERIFICATION_SUBJECT || 'Verify Your Email - Assistly',
+      subject: process.env.EMAIL_VERIFICATION_SUBJECT || 'Verify Your Email - UpZilo',
       htmlContent: htmlContent,
       textContent: textContent,
       templateId: templateData.templateId
@@ -174,7 +188,7 @@ class EmailService {
 
     const emailData = {
       to: email,
-      subject: process.env.EMAIL_PASSWORD_RESET_SUBJECT || 'Reset Your Password - Assistly',
+      subject: process.env.EMAIL_PASSWORD_RESET_SUBJECT || 'Reset Your Password - UpZilo',
       htmlContent: htmlContent,
       textContent: textContent,
       templateId: templateData.templateId
@@ -199,13 +213,35 @@ class EmailService {
       throw new Error('OTP code is required');
     }
 
-    if (!templateData.htmlTemplate) {
+    const rawBrand =
+      templateData?.branding ||
+      templateData?.brand ||
+      templateData?.companyName ||
+      '';
+    const normalizedBrand = String(rawBrand).trim().toLowerCase();
+    const isFacelismBranding =
+      normalizedBrand === 'facelism' ||
+      normalizedBrand === 'facelism luxe' ||
+      normalizedBrand.replace(/[^a-z0-9]/g, '') === 'facelism';
+
+    if (!templateData.htmlTemplate && !isFacelismBranding) {
       throw new Error('HTML template is required');
     }
 
     // Replace placeholders in HTML content with real data
     let htmlContent = templateData.htmlTemplate;
     let textContent = templateData.textContent;
+
+    if (isFacelismBranding) {
+      htmlContent = buildFacelismVerificationCodeHtml({
+        customerName: firstName || 'Customer',
+        otp,
+        supportEmail: templateData?.supportEmail || 'info@facelism.com',
+      });
+      textContent =
+        textContent ||
+        `Hello ${firstName || 'Customer'}, your Facelism verification code is ${otp}. This code will expire in 10 minutes.`;
+    }
 
     // Replace OTP placeholders
     if (htmlContent) {
@@ -222,13 +258,97 @@ class EmailService {
 
     const emailData = {
       to: email,
-      subject: process.env.EMAIL_OTP_SUBJECT || 'Your Verification Code - Assistly',
+      subject: isFacelismBranding
+        ? (process.env.EMAIL_OTP_SUBJECT_FACELISM || 'Your Verification Code - Facelism')
+        : (process.env.EMAIL_OTP_SUBJECT || 'Your Verification Code - UpZilo'),
       htmlContent: htmlContent,
       textContent: textContent,
-      templateId: templateData.templateId
+      templateId: templateData.templateId,
+      ...(isFacelismBranding ? { fromName: process.env.FACELISM_FROM_NAME || 'Facelism' } : {})
     };
 
     return this.sendEmail(emailData);
+  }
+
+  async sendAppointmentConfirmationEmail(customerData, appointmentData, businessData = {}) {
+    const customerName = customerData?.name || 'Customer';
+    const customerEmail = customerData?.email;
+    if (!customerEmail) throw new Error('Customer email is required');
+
+    const companyName = businessData?.companyName || businessData?.name || process.env.FROM_NAME || 'Our Team';
+    const serviceName = appointmentData?.serviceName || appointmentData?.title || 'Appointment';
+    const startText = appointmentData?.startText || '';
+    const endText = appointmentData?.endText || '';
+    const calendarLink = appointmentData?.link || '';
+    const postBookingNote = appointmentData?.postBookingNote || '';
+
+    const theme = getCompanyTheme(companyName, {
+      primaryColor: businessData?.primaryColor,
+      logoUrl: businessData?.logoUrl,
+    });
+
+    const htmlContent = buildCustomerConfirmationHtml({
+      customerName,
+      serviceName,
+      startText,
+      endText,
+      calendarLink,
+      postBookingNote,
+      theme,
+    });
+
+    return this.sendEmail({
+      to: customerEmail,
+      subject: `Appointment Confirmed – ${serviceName} | ${companyName}`,
+      htmlContent,
+      textContent: `Hi ${customerName}, your ${serviceName} appointment with ${companyName} is confirmed for ${startText}. We look forward to seeing you!`,
+      // In inbox, show the business brand (e.g. "Facelism") when SendGrid allows this display name on your domain.
+      fromName: companyName,
+    });
+  }
+
+  async sendAppointmentBusinessNotificationEmail(businessData, customerData, appointmentData) {
+    const businessEmail = businessData?.email;
+    if (!businessEmail) throw new Error('Business email is required');
+
+    const companyName = businessData?.companyName || businessData?.name || 'Business';
+    const customerName = customerData?.name || 'Customer';
+    const customerEmail = customerData?.email || 'Not provided';
+    const customerPhone = customerData?.phone || 'Not provided';
+    const serviceName = appointmentData?.serviceName || appointmentData?.title || 'Appointment';
+    const startText = appointmentData?.startText || '';
+    const endText = appointmentData?.endText || '';
+    const calendarLink = appointmentData?.link || '';
+
+    const theme = getCompanyTheme(companyName, {
+      primaryColor: businessData?.primaryColor,
+      logoUrl: businessData?.logoUrl,
+    });
+
+    const htmlContent = buildBusinessNotificationHtml({
+      businessName: companyName,
+      customerName,
+      customerEmail,
+      customerPhone,
+      serviceName,
+      startText,
+      endText,
+      calendarLink,
+      theme,
+    });
+
+    const alertFromName =
+      process.env.BOOKING_ALERT_FROM_NAME ||
+      process.env.FROM_NAME ||
+      'UpZilo';
+
+    return this.sendEmail({
+      to: businessEmail,
+      subject: `New Appointment – ${serviceName} (${customerName})`,
+      htmlContent,
+      textContent: `New appointment booked: ${serviceName} at ${startText}. Customer: ${customerName} | ${customerEmail} | ${customerPhone}.`,
+      fromName: alertFromName,
+    });
   }
 
   /**

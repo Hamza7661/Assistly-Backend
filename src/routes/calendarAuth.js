@@ -35,9 +35,22 @@ function sanitizeEnv(value) {
   return String(value || '').trim().replace(/^["']|["']$/g, '');
 }
 
+function resolveOutlookTenantId() {
+  const t = sanitizeEnv(process.env.OUTLOOK_CALENDAR_TENANT_ID);
+  return t || 'common';
+}
+
 function resolveProvider(req) {
-  const provider = (req.query.provider || req.body?.provider || PROVIDER_GOOGLE).toString().toLowerCase();
-  return provider === PROVIDER_OUTLOOK ? PROVIDER_OUTLOOK : PROVIDER_GOOGLE;
+  const raw = (req.query.provider || req.body?.provider || PROVIDER_GOOGLE).toString().trim().toLowerCase();
+  const outlookAliases = new Set([
+    PROVIDER_OUTLOOK,
+    'microsoft',
+    'office365',
+    'm365',
+    'ms'
+  ]);
+  if (outlookAliases.has(raw)) return PROVIDER_OUTLOOK;
+  return PROVIDER_GOOGLE;
 }
 
 function encodeState(stateObj) {
@@ -85,7 +98,7 @@ router.get('/apps/:appId/calendar/auth', authenticateToken, verifyAppOwnership, 
 
     if (provider === PROVIDER_OUTLOOK) {
       const clientId = sanitizeEnv(process.env.OUTLOOK_CALENDAR_CLIENT_ID);
-      const tenantId = process.env.OUTLOOK_CALENDAR_TENANT_ID;
+      const tenantId = resolveOutlookTenantId();
       const redirectUri = sanitizeEnv(process.env.OUTLOOK_CALENDAR_REDIRECT_URI || `${process.env.APP_URL || 'http://localhost:5000'}/api/v1/integration/calendar/callback`);
       if (!clientId) {
         return next(new AppError('Outlook Calendar OAuth is not configured. Set OUTLOOK_CALENDAR_CLIENT_ID.', 503));
@@ -105,7 +118,7 @@ router.get('/apps/:appId/calendar/auth', authenticateToken, verifyAppOwnership, 
 
     const clientId = (process.env.GOOGLE_CALENDAR_CLIENT_ID || '').trim().replace(/^["']|["']$/g, '');
     const clientSecret = (process.env.GOOGLE_CALENDAR_CLIENT_SECRET || '').trim().replace(/^["']|["']$/g, '');
-    const redirectUri = (process.env.GOOGLE_CALENDAR_REDIRECT_URI || `${process.env.APP_URL || 'https://assistly-backend-eu.onrender.com'}/api/v1/integration/calendar/callback`).trim().replace(/^["']|["']$/g, '');
+    const redirectUri = (process.env.GOOGLE_CALENDAR_REDIRECT_URI || `${process.env.APP_URL || 'https://upzilo-backend.onrender.com'}/api/v1/integration/calendar/callback`).trim().replace(/^["']|["']$/g, '');
     if (!clientId || !clientSecret) {
       return next(new AppError('Google Calendar OAuth is not configured. Set GOOGLE_CALENDAR_CLIENT_ID and GOOGLE_CALENDAR_CLIENT_SECRET.', 503));
     }
@@ -156,7 +169,7 @@ router.get('/apps/:appId/calendar/auth-url', authenticateToken, verifyAppOwnersh
 
     const clientId = (process.env.GOOGLE_CALENDAR_CLIENT_ID || '').trim().replace(/^["']|["']$/g, '');
     const clientSecret = (process.env.GOOGLE_CALENDAR_CLIENT_SECRET || '').trim().replace(/^["']|["']$/g, '');
-    const redirectUri = (process.env.GOOGLE_CALENDAR_REDIRECT_URI || `${process.env.APP_URL || 'https://assistly-backend-eu.onrender.com'}/api/v1/integration/calendar/callback`).trim().replace(/^["']|["']$/g, '');
+    const redirectUri = (process.env.GOOGLE_CALENDAR_REDIRECT_URI || `${process.env.APP_URL || 'https://upzilo-backend.onrender.com'}/api/v1/integration/calendar/callback`).trim().replace(/^["']|["']$/g, '');
     if (!clientId || !clientSecret) {
       return next(new AppError('Google Calendar OAuth is not configured.', 503));
     }
@@ -188,7 +201,7 @@ router.get('/calendar/callback', async (req, res, next) => {
     const failureUrl = buildIntegrationRedirect(frontendBase, 'error');
 
     if (error) {
-      logger.warn('Google Calendar OAuth error', { error });
+      logger.warn('Calendar OAuth provider returned error', { error });
       return res.redirect(failureUrl);
     }
     if (!code || !state) {
@@ -204,6 +217,7 @@ router.get('/calendar/callback', async (req, res, next) => {
 
     let refreshToken = null;
     let calendarAccountEmail = null;
+    let calendarTimezone = null;
     if (provider === PROVIDER_OUTLOOK) {
       const clientId = sanitizeEnv(process.env.OUTLOOK_CALENDAR_CLIENT_ID);
       const clientSecret = sanitizeEnv(process.env.OUTLOOK_CALENDAR_CLIENT_SECRET);
@@ -238,11 +252,11 @@ router.get('/calendar/callback', async (req, res, next) => {
       }
     } else {
       const clientId = (process.env.GOOGLE_CALENDAR_CLIENT_ID || '').trim().replace(/^["']|["']$/g, '');
-    const clientSecret = (process.env.GOOGLE_CALENDAR_CLIENT_SECRET || '').trim().replace(/^["']|["']$/g, '');
-    const redirectUri = (process.env.GOOGLE_CALENDAR_REDIRECT_URI || `${process.env.APP_URL || 'https://assistly-backend-eu.onrender.com'}/api/v1/integration/calendar/callback`).trim().replace(/^["']|["']$/g, '');
-    if (!clientId || !clientSecret) {
-      return res.redirect(failureUrl);
-    }
+      const clientSecret = (process.env.GOOGLE_CALENDAR_CLIENT_SECRET || '').trim().replace(/^["']|["']$/g, '');
+      const redirectUri = (process.env.GOOGLE_CALENDAR_REDIRECT_URI || `${process.env.APP_URL || 'https://upzilo-backend.onrender.com'}/api/v1/integration/calendar/callback`).trim().replace(/^["']|["']$/g, '');
+      if (!clientId || !clientSecret) {
+        return res.redirect(failureUrl);
+      }
 
       const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
       let tokens;
@@ -270,6 +284,15 @@ router.get('/calendar/callback', async (req, res, next) => {
         }
       } catch (emailErr) {
         logger.warn('Google Calendar: could not fetch account email', { message: emailErr.message });
+      }
+      try {
+        const calendarApi = google.calendar({ version: 'v3', auth: oauth2Client });
+        const calInfo = await calendarApi.calendars.get({ calendarId: 'primary' });
+        if (calInfo.data && calInfo.data.timeZone) {
+          calendarTimezone = calInfo.data.timeZone;
+        }
+      } catch (tzErr) {
+        logger.warn('Google Calendar: could not fetch calendar timezone', { message: tzErr.message });
       }
     }
 
@@ -303,14 +326,15 @@ router.get('/calendar/callback', async (req, res, next) => {
       { owner: appId },
       {
         googleCalendarRefreshToken: provider === PROVIDER_GOOGLE ? encrypted : null,
-        googleCalendarCalendarId: provider === PROVIDER_GOOGLE ? 'primary' : 'primary',
+        googleCalendarCalendarId: provider === PROVIDER_GOOGLE ? 'primary' : null,
         outlookCalendarRefreshToken: provider === PROVIDER_OUTLOOK ? encrypted : null,
-        outlookCalendarCalendarId: provider === PROVIDER_OUTLOOK ? 'primary' : 'primary',
+        outlookCalendarCalendarId: provider === PROVIDER_OUTLOOK ? 'primary' : null,
         googleCalendarConnected: provider === PROVIDER_GOOGLE,
         outlookCalendarConnected: provider === PROVIDER_OUTLOOK,
         calendlyConnected: false,
         calendarProvider: provider,
-        calendarAccountEmail: calendarAccountEmail || null
+        calendarAccountEmail: calendarAccountEmail || null,
+        googleCalendarTimezone: provider === PROVIDER_GOOGLE ? calendarTimezone || null : null
       },
       { new: true }
     );
@@ -346,7 +370,8 @@ router.delete('/apps/:appId/calendar', authenticateToken, verifyAppOwnership, as
         outlookCalendarConnected: false,
         calendlyConnected: false,
         calendarProvider: null,
-        calendarAccountEmail: null
+        calendarAccountEmail: null,
+        googleCalendarTimezone: null
       },
       { new: true }
     );

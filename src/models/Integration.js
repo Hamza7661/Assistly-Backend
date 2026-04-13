@@ -68,11 +68,27 @@ const integrationSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
+  captureLeadName: {
+    type: Boolean,
+    default: true
+  },
+  captureLeadEmail: {
+    type: Boolean,
+    default: true
+  },
+  captureLeadPhoneNumber: {
+    type: Boolean,
+    default: true
+  },
   /**
    * When true, non-voice channels use a more conversational/free-form style
    * (no strict button/number selection lists for lead/service/workflow).
    */
   conversationStyle: {
+    type: Boolean,
+    default: false
+  },
+  captureFeedbackEnabled: {
     type: Boolean,
     default: false
   },
@@ -140,6 +156,13 @@ const integrationSchema = new mongoose.Schema({
     default: null,
     trim: true,
     maxlength: 255
+  },
+  /** IANA timezone of the connected Google Calendar (e.g. 'Asia/Karachi'). Fetched at connect time. */
+  googleCalendarTimezone: {
+    type: String,
+    default: null,
+    trim: true,
+    maxlength: 100
   },
   /** Slot length in minutes for calendar availability (15, 30, or 60). Used when returning free slots to chatbot. */
   calendarSlotMinutes: {
@@ -245,7 +268,11 @@ const integrationValidationSchema = Joi.object({
   }),
   validateEmail: Joi.boolean().optional(),
   validatePhoneNumber: Joi.boolean().optional(),
+  captureLeadName: Joi.boolean().optional(),
+  captureLeadEmail: Joi.boolean().optional(),
+  captureLeadPhoneNumber: Joi.boolean().optional(),
   conversationStyle: Joi.boolean().optional(),
+  captureFeedbackEnabled: Joi.boolean().optional(),
   googleReviewEnabled: Joi.boolean().optional(),
   googleReviewUrl: Joi.string().max(500).allow(null, '').optional(),
   calendarSlotMinutes: Joi.number().valid(15, 30, 60).optional(),
@@ -278,7 +305,11 @@ const integrationUpdateValidationSchema = Joi.object({
   }),
   validateEmail: Joi.boolean().optional(),
   validatePhoneNumber: Joi.boolean().optional(),
+  captureLeadName: Joi.boolean().optional(),
+  captureLeadEmail: Joi.boolean().optional(),
+  captureLeadPhoneNumber: Joi.boolean().optional(),
   conversationStyle: Joi.boolean().optional(),
+  captureFeedbackEnabled: Joi.boolean().optional(),
   googleReviewEnabled: Joi.boolean().optional(),
   googleReviewUrl: Joi.string().max(500).allow(null, '').optional(),
   calendarSlotMinutes: Joi.number().valid(15, 30, 60).optional(),

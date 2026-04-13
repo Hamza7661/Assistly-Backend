@@ -4,10 +4,14 @@ const { verifySignedThirdPartyForParamUser } = require('../middleware/thirdParty
 const { Integration } = require('../models/Integration');
 const { Availability } = require('../models/Availability');
 const { AvailabilityException } = require('../models/AvailabilityException');
+const { App } = require('../models/App');
+const { User } = require('../models/User');
+const { Lead } = require('../models/Lead');
 const { getAppointmentSchedulerProvider, PROVIDER_GOOGLE, PROVIDER_OUTLOOK } = require('../integrations/appointment/appointmentSchedulerFactory');
 const { availabilitySuccess, availabilityNotConnectedOrError } = require('../integrations/appointment/commonViewModel');
 const { generateSlotsFromRules, isAllowedSlotMinutes } = require('../services/availabilitySlotGenerator');
 const { logger } = require('../utils/logger');
+const EmailService = require('../utils/emailService');
 
 const router = express.Router();
 
@@ -17,11 +21,17 @@ const router = express.Router();
  */
 async function getProviderForApp(appId) {
   const integration = await Integration.findOne({ owner: appId })
-    .select('googleCalendarConnected outlookCalendarConnected calendlyConnected calendarProvider googleCalendarRefreshToken googleCalendarCalendarId outlookCalendarRefreshToken outlookCalendarCalendarId calendarSlotMinutes')
+    .select(
+      'googleCalendarConnected outlookCalendarConnected calendlyConnected calendarProvider googleCalendarRefreshToken googleCalendarCalendarId outlookCalendarRefreshToken outlookCalendarCalendarId calendarSlotMinutes googleCalendarTimezone'
+    )
     .lean()
     .exec();
 
-  const providerType = integration?.calendarProvider || (integration?.googleCalendarRefreshToken ? PROVIDER_GOOGLE : null);
+  let providerType = integration?.calendarProvider || null;
+  if (!providerType) {
+    if (integration?.googleCalendarRefreshToken) providerType = PROVIDER_GOOGLE;
+    else if (integration?.outlookCalendarRefreshToken) providerType = PROVIDER_OUTLOOK;
+  }
   const hasGoogleToken = !!integration?.googleCalendarRefreshToken;
   const hasOutlookToken = !!integration?.outlookCalendarRefreshToken;
   const connectedByFlag = !!(integration?.googleCalendarConnected || integration?.outlookCalendarConnected || integration?.calendlyConnected);
@@ -117,19 +127,23 @@ router.get('/apps/:appId/availability', verifySignedThirdPartyForParamUser, asyn
       baseViewModel = availabilityNotConnectedOrError({ message: 'No calendar connected for this app.' });
     }
 
+    const calendarTimezone = integration?.googleCalendarTimezone || null;
+
     const freeSlots = generateSlotsFromRules({
       timeMin,
       timeMax,
       weeklyAvailability,
       exceptions,
       providerBusy,
-      slotMinutes
+      slotMinutes,
+      defaultTimezone: calendarTimezone
     });
 
     const viewModel = {
       ...baseViewModel,
       freeSlots,
-      calendarConnected: !!provider
+      calendarConnected: !!provider,
+      calendarTimezone
     };
 
     res.status(200).json({
@@ -153,7 +167,7 @@ router.get('/apps/:appId/availability', verifySignedThirdPartyForParamUser, asyn
 router.post('/apps/:appId/appointments', verifySignedThirdPartyForParamUser, async (req, res, next) => {
   try {
     const appId = req.params.appId;
-    const { start, end, title, attendeeEmail, description, timeZone } = req.body || {};
+    const { start, end, title, attendeeEmail, description, timeZone, customerName, customerPhone, leadId, postBookingNote } = req.body || {};
 
     if (!appId) return next(new AppError('App ID is required', 400));
     if (!start || !end || !title) {
@@ -176,6 +190,121 @@ router.post('/apps/:appId/appointments', verifySignedThirdPartyForParamUser, asy
       description,
       timeZone
     });
+
+    if (viewModel.success) {
+      try {
+        const app = await App.findById(appId).select('owner name').lean().exec();
+        const owner = app?.owner ? await User.findById(app.owner).select('email firstName lastName').lean().exec() : null;
+        const integration = await Integration.findOne({ owner: appId })
+          .select('assistantName companyName primaryColor chatbotImage googleCalendarTimezone')
+          .lean()
+          .exec();
+        const emailService = new EmailService();
+        const logoUrl = integration?.chatbotImage?.filename
+          ? `${process.env.NEXT_PUBLIC_API_URL || ''}/api/v1/integration/public/apps/${appId}/chatbot-image`
+          : '';
+        // companyName is the real business brand (e.g. "Facelism"); assistantName is the bot persona (e.g. "Assistant")
+        const resolvedCompanyName = integration?.companyName || app?.name || 'Business';
+        const businessData = {
+          companyName: resolvedCompanyName,
+          name: resolvedCompanyName,
+          email: 'socialaliafzal@gmail.com',
+          primaryColor: integration?.primaryColor || '#c01721',
+          logoUrl,
+        };
+        const calTz = integration?.googleCalendarTimezone || 'UTC';
+        const formatInCalTz = (isoStr) => {
+          try {
+            return new Date(isoStr).toLocaleString('en-US', {
+              timeZone: calTz,
+              weekday: 'short',
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true,
+            });
+          } catch {
+            return new Date(isoStr).toLocaleString();
+          }
+        };
+        const appointmentData = {
+          serviceName: title,
+          title,
+          startText: formatInCalTz(start),
+          endText: formatInCalTz(end),
+          link: viewModel.link || '',
+          postBookingNote: postBookingNote || ''
+        };
+        const resolvedCustomerName = customerName || 'Customer';
+        const resolvedCustomerPhone = customerPhone || 'Not provided';
+        let confirmationEmailSent = false;
+        if (attendeeEmail) {
+          await emailService.sendAppointmentConfirmationEmail(
+            { name: resolvedCustomerName, email: attendeeEmail },
+            appointmentData,
+            businessData
+          );
+          confirmationEmailSent = true;
+        }
+        if (businessData.email) {
+          await emailService.sendAppointmentBusinessNotificationEmail(
+            businessData,
+            { name: resolvedCustomerName, email: attendeeEmail || 'Not provided', phone: resolvedCustomerPhone },
+            appointmentData
+          );
+        }
+
+        // If customer confirmation email was sent successfully, mark the initiating lead as confirmed.
+        if (confirmationEmailSent) {
+          try {
+            const patch = {
+              status: 'confirmed',
+              appointmentDetails: {
+                eventId: viewModel.eventId || null,
+                start: start ? new Date(start) : null,
+                end: end ? new Date(end) : null,
+                link: viewModel.link || '',
+                confirmed: true
+              }
+            };
+
+            // Preferred: leadId provided by AI/widget.
+            let lead = null;
+            if (leadId) {
+              lead = await Lead.findById(leadId);
+            }
+
+            // Fallback: try to resolve lead by app + email/phone within recent window.
+            if (!lead) {
+              const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+              const or = [];
+              if (attendeeEmail) or.push({ leadEmail: String(attendeeEmail).toLowerCase() });
+              if (customerPhone) or.push({ leadPhoneNumber: String(customerPhone) });
+              if (or.length > 0) {
+                lead = await Lead.findOne({
+                  appId,
+                  createdAt: { $gte: cutoff },
+                  $or: or
+                }).sort({ createdAt: -1 });
+              }
+            }
+
+            if (lead) {
+              Object.assign(lead, patch);
+              await lead.save();
+            } else {
+              logger.warn('Booking confirmation email sent, but no lead was found to confirm', { appId, leadId: leadId || null });
+            }
+          } catch (leadErr) {
+            logger.error('Failed to update lead to confirmed after booking', { appId, leadId: leadId || null, error: leadErr.message });
+          }
+        }
+      } catch (emailErr) {
+        logger.error('Calendar booking email sending failed', { appId, error: emailErr.message });
+      }
+    }
 
     res.status(viewModel.success ? 201 : 200).json({
       status: viewModel.success ? 'success' : 'error',

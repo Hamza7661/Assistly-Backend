@@ -44,12 +44,18 @@ async function getFreebusy(encryptedRefreshToken, calendarId, timeMin, timeMax) 
         items: [{ id: calendarId || 'primary' }]
       }
     });
-    const cal = res.data.calendars && res.data.calendars[calendarId || 'primary'];
-    if (!cal) {
-      return { busy: [], freeSlots: [] };
+    // Google's freebusy response is keyed by the actual calendar email, not the alias 'primary'.
+    // Collect busy periods from all returned calendar entries to handle both cases.
+    const calendarsMap = res.data.calendars || {};
+    const allBusy = [];
+    for (const calData of Object.values(calendarsMap)) {
+      if (calData && Array.isArray(calData.busy)) {
+        for (const b of calData.busy) {
+          allBusy.push({ start: b.start, end: b.end });
+        }
+      }
     }
-    const busy = (cal.busy || []).map((b) => ({ start: b.start, end: b.end }));
-    return { busy };
+    return { busy: allBusy };
   } catch (err) {
     logger.error('Google Calendar freebusy error', { message: err.message, calendarId });
     throw err;
