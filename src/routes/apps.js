@@ -1114,6 +1114,63 @@ class AppController {
   }
 
   /**
+   * Fetch latest inbound SMS messages for this app number and extract OTP-like codes.
+   * Used by Meta Embedded Signup UI to auto-surface verification SMS.
+   */
+  async getLatestSms(req, res, next) {
+    try {
+      const userId = req.user.id;
+      const { id } = req.params;
+
+      const app = await AppController.verifyAppOwnership(id, userId);
+      const appFull = await App.findById(id).select('+twilioSubaccountAuthTokenEnc');
+
+      const number = (app.twilioPhoneNumber || app.whatsappNumber || '').trim();
+      if (!number) {
+        throw new AppError('No WhatsApp/Twilio number configured for this app.', 400);
+      }
+
+      const subToken = appFull?.twilioSubaccountAuthTokenEnc
+        ? decryptAuthToken(appFull.twilioSubaccountAuthTokenEnc)
+        : null;
+      const twilioAccountSid = appFull?.twilioSubaccountSid || process.env.TWILIO_ACCOUNT_SID;
+      const twilioAuthToken = subToken || process.env.TWILIO_AUTH_TOKEN;
+      if (!twilioAccountSid || !twilioAuthToken) {
+        throw new AppError('Twilio credentials are not configured for this app.', 503);
+      }
+
+      const phoneService = createTwilioPhoneServiceForAccount(twilioAccountSid, twilioAuthToken);
+      const messages = await phoneService.client.messages.list({
+        to: number,
+        limit: 20
+      });
+
+      const parsed = (messages || [])
+        .filter((m) => (m.direction || '').includes('inbound'))
+        .sort((a, b) => new Date(b.dateSent || b.dateCreated) - new Date(a.dateSent || a.dateCreated))
+        .map((m) => {
+          const body = String(m.body || '');
+          const otpMatch = body.match(/\b(\d{4,8})\b/);
+          return {
+            from: m.from || '',
+            body,
+            dateSent: m.dateSent || m.dateCreated || null,
+            otp: otpMatch ? otpMatch[1] : null
+          };
+        });
+
+      res.status(200).json({
+        status: 'success',
+        data: {
+          messages: parsed
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Twilio sender status callback (webhook). Twilio POSTs here when sender status changes.
    * Body may include SenderSid, Status, etc. Find app by twilioWhatsAppSenderId and update whatsappNumberStatus.
    */
@@ -1930,6 +1987,7 @@ router.post('/:id/restore', authenticateToken, appController.restoreApp);
 router.post('/:id/assign-number', authenticateToken, appController.assignNumber);
 router.post('/:id/whatsapp/register', authenticateToken, appController.registerWhatsApp);
 router.post('/:id/whatsapp/verify', authenticateToken, appController.verifyWhatsApp);
+router.get('/:id/latest-sms', authenticateToken, appController.getLatestSms);
 router.post('/:id/set-uses-twilio', authenticateToken, appController.setUsesTwilioNumber);
 router.get('/:id', authenticateToken, appController.getApp);
 router.put('/:id', authenticateToken, appController.updateApp);
