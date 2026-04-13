@@ -249,6 +249,40 @@ class AppController {
     return { sid, token: authToken };
   }
 
+  static shouldFallbackToParentForCountry(code, error) {
+    const country = String(code || '').trim().toUpperCase();
+    if (country !== 'GB') return false;
+    const status = Number(error?.status || error?.statusCode || 0);
+    const twilioCode = Number(error?.code || 0);
+    const msg = String(error?.message || '').toLowerCase();
+    if (status === 401 || twilioCode === 20003) return true; // auth-related
+    if (msg.includes('bundle') || msg.includes('regulatory')) return true; // country compliance/bundle related
+    return false;
+  }
+
+  /**
+   * Ensure Twilio subaccount credentials are ready for an app.
+   * Useful for proactively validating "get a new number" flows.
+   */
+  async ensureSubaccount(req, res, next) {
+    try {
+      const userId = req.user.id;
+      const { id } = req.params;
+      await AppController.verifyAppOwnership(id, userId);
+      const appFull = await App.findById(id).select('+twilioSubaccountAuthTokenEnc');
+      const { sid } = await AppController.ensureTwilioSubaccountForApp(appFull);
+      res.status(200).json({
+        status: 'success',
+        message: 'Twilio subaccount is ready',
+        data: {
+          twilioSubaccountSid: sid
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async createApp(req, res, next) {
     try {
       const userId = req.user.id;
@@ -856,13 +890,30 @@ class AppController {
       await AppController.verifyAppOwnership(id, userId);
       const appFull = await App.findById(id).select('+twilioSubaccountAuthTokenEnc');
       const { sid, token } = await AppController.ensureTwilioSubaccountForApp(appFull);
-      const phoneService = createTwilioPhoneServiceForAccount(sid, token);
       const code = (countryCode || '').trim().toUpperCase();
       if (!code || code.length !== 2) {
         throw new AppError('Valid countryCode (ISO 3166-1 alpha-2, e.g. US, GB) is required', 400);
       }
       const maxLimit = Math.min(parseInt(limit, 10) || 20, 50);
-      const numbers = await phoneService.getAvailableNumbers(code, { limit: maxLimit });
+      let numbers;
+      try {
+        const phoneService = createTwilioPhoneServiceForAccount(sid, token);
+        numbers = await phoneService.getAvailableNumbers(code, { limit: maxLimit });
+      } catch (subErr) {
+        if (!AppController.shouldFallbackToParentForCountry(code, subErr)) {
+          throw subErr;
+        }
+        logger.warn('Subaccount available-numbers failed; falling back to parent account', {
+          appId: id,
+          countryCode: code,
+          subaccountSid: sid,
+          error: subErr?.message,
+          twilioCode: subErr?.code,
+          status: subErr?.status
+        });
+        const parentPhoneService = getTwilioPhoneService();
+        numbers = await parentPhoneService.getAvailableNumbers(code, { limit: maxLimit });
+      }
       res.status(200).json({
         status: 'success',
         data: {
@@ -893,12 +944,32 @@ class AppController {
       if (!code || code.length !== 2) {
         throw new AppError('Valid countryCode (ISO 3166-1 alpha-2) is required', 400);
       }
-      const phoneService = createTwilioPhoneServiceForAccount(sid, token);
       let result;
-      if (requestedNumber && String(requestedNumber).trim().startsWith('+')) {
-        result = await phoneService.purchaseNumber(String(requestedNumber).trim());
-      } else {
-        result = await phoneService.assignFirstAvailableNumber(code);
+      try {
+        const phoneService = createTwilioPhoneServiceForAccount(sid, token);
+        if (requestedNumber && String(requestedNumber).trim().startsWith('+')) {
+          result = await phoneService.purchaseNumber(String(requestedNumber).trim());
+        } else {
+          result = await phoneService.assignFirstAvailableNumber(code);
+        }
+      } catch (subErr) {
+        if (!AppController.shouldFallbackToParentForCountry(code, subErr)) {
+          throw subErr;
+        }
+        logger.warn('Subaccount provision-number failed; falling back to parent account', {
+          appId: id,
+          countryCode: code,
+          subaccountSid: sid,
+          error: subErr?.message,
+          twilioCode: subErr?.code,
+          status: subErr?.status
+        });
+        const parentPhoneService = getTwilioPhoneService();
+        if (requestedNumber && String(requestedNumber).trim().startsWith('+')) {
+          result = await parentPhoneService.purchaseNumber(String(requestedNumber).trim());
+        } else {
+          result = await parentPhoneService.assignFirstAvailableNumber(code);
+        }
       }
       if (!result) {
         throw new AppError(`No available numbers for country ${code}`, 404);
@@ -2003,6 +2074,7 @@ router.get('/by-social-sender/:socialSenderId/context', verifySignedThirdPartyFo
 // More specific routes must come before generic :id routes
 router.post('/:id/facebook/connect', authenticateToken, appController.connectFacebook.bind(appController));
 router.post('/:id/facebook/disconnect', authenticateToken, appController.disconnectFacebook.bind(appController));
+router.post('/:id/ensure-subaccount', authenticateToken, appController.ensureSubaccount.bind(appController));
 router.get('/:id/available-numbers', authenticateToken, appController.getAvailableNumbersForApp);
 router.post('/:id/provision-number', authenticateToken, appController.provisionNumberForApp);
 router.post('/:id/restore', authenticateToken, appController.restoreApp);
