@@ -26,9 +26,9 @@ const OUTLOOK_SCOPES = [
   'openid',
   'profile',
   'email',
-  'User.Read',
-  'Calendars.Read',
-  'Calendars.ReadWrite'
+  'https://graph.microsoft.com/User.Read',
+  'https://graph.microsoft.com/Calendars.Read',
+  'https://graph.microsoft.com/Calendars.ReadWrite'
 ];
 
 function sanitizeEnv(value) {
@@ -85,7 +85,7 @@ router.get('/apps/:appId/calendar/auth', authenticateToken, verifyAppOwnership, 
 
     if (provider === PROVIDER_OUTLOOK) {
       const clientId = sanitizeEnv(process.env.OUTLOOK_CALENDAR_CLIENT_ID);
-      const tenantId = sanitizeEnv(process.env.OUTLOOK_CALENDAR_TENANT_ID) || 'common';
+      const tenantId = process.env.OUTLOOK_CALENDAR_TENANT_ID;
       const redirectUri = sanitizeEnv(process.env.OUTLOOK_CALENDAR_REDIRECT_URI || `${process.env.APP_URL || 'http://localhost:5000'}/api/v1/integration/calendar/callback`);
       if (!clientId) {
         return next(new AppError('Outlook Calendar OAuth is not configured. Set OUTLOOK_CALENDAR_CLIENT_ID.', 503));
@@ -98,6 +98,7 @@ router.get('/apps/:appId/calendar/auth', authenticateToken, verifyAppOwnership, 
       authorizeUrl.searchParams.set('redirect_uri', redirectUri);
       authorizeUrl.searchParams.set('response_mode', 'query');
       authorizeUrl.searchParams.set('scope', OUTLOOK_SCOPES.join(' '));
+      authorizeUrl.searchParams.set('prompt', 'select_account');
       authorizeUrl.searchParams.set('state', state);
       return res.redirect(authorizeUrl.toString());
     }
@@ -136,7 +137,7 @@ router.get('/apps/:appId/calendar/auth-url', authenticateToken, verifyAppOwnersh
 
     if (provider === PROVIDER_OUTLOOK) {
       const clientId = sanitizeEnv(process.env.OUTLOOK_CALENDAR_CLIENT_ID);
-      const tenantId = sanitizeEnv(process.env.OUTLOOK_CALENDAR_TENANT_ID) || 'common';
+      const tenantId = resolveOutlookTenantId();
       const redirectUri = sanitizeEnv(process.env.OUTLOOK_CALENDAR_REDIRECT_URI || `${process.env.APP_URL || 'http://localhost:5000'}/api/v1/integration/calendar/callback`);
       if (!clientId) {
         return next(new AppError('Outlook Calendar OAuth is not configured.', 503));
@@ -148,6 +149,7 @@ router.get('/apps/:appId/calendar/auth-url', authenticateToken, verifyAppOwnersh
       authorizeUrl.searchParams.set('redirect_uri', redirectUri);
       authorizeUrl.searchParams.set('response_mode', 'query');
       authorizeUrl.searchParams.set('scope', OUTLOOK_SCOPES.join(' '));
+      authorizeUrl.searchParams.set('prompt', 'select_account');
       authorizeUrl.searchParams.set('state', state);
       return res.status(200).json({ status: 'success', data: { url: authorizeUrl.toString() } });
     }
@@ -205,7 +207,7 @@ router.get('/calendar/callback', async (req, res, next) => {
     if (provider === PROVIDER_OUTLOOK) {
       const clientId = sanitizeEnv(process.env.OUTLOOK_CALENDAR_CLIENT_ID);
       const clientSecret = sanitizeEnv(process.env.OUTLOOK_CALENDAR_CLIENT_SECRET);
-      const tenantId = sanitizeEnv(process.env.OUTLOOK_CALENDAR_TENANT_ID) || 'common';
+      const tenantId = resolveOutlookTenantId();
       const redirectUri = sanitizeEnv(process.env.OUTLOOK_CALENDAR_REDIRECT_URI || `${process.env.APP_URL || 'http://localhost:5000'}/api/v1/integration/calendar/callback`);
       if (!clientId || !clientSecret) {
         return res.redirect(failureUrl);

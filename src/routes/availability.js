@@ -4,6 +4,10 @@ const { authenticateToken, requireUserOrAdmin } = require('../middleware/auth');
 const { verifyAppOwnership } = require('../middleware/appOwnership');
 const { verifySignedThirdPartyForParamUser } = require('../middleware/thirdParty');
 const { Availability, availabilityUpsertSchema, availabilityBulkSchema } = require('../models/Availability');
+const { Integration } = require('../models/Integration');
+const { PROVIDER_OUTLOOK } = require('../integrations/appointment/commonViewModel');
+const { syncAvailabilityExceptionToOutlook } = require('../services/outlookCalendarService');
+const { logger } = require('../utils/logger');
 const {
   AvailabilityException,
   availabilityExceptionUpsertSchema,
@@ -11,6 +15,66 @@ const {
 } = require('../models/AvailabilityException');
 
 const router = express.Router();
+
+async function trySyncExceptionToOutlook(appId, exceptionDoc) {
+  try {
+    if (!exceptionDoc?._id) return;
+    await AvailabilityException.updateOne(
+      { _id: exceptionDoc._id },
+      { $set: { syncStatus: 'pending', syncError: null }, $inc: { syncAttempts: 1 } }
+    );
+
+    const integration = await Integration.findOne({ owner: appId })
+      .select('calendarProvider outlookCalendarConnected outlookCalendarRefreshToken outlookCalendarCalendarId')
+      .lean()
+      .exec();
+
+    if (!integration || integration.calendarProvider !== PROVIDER_OUTLOOK || !integration.outlookCalendarConnected || !integration.outlookCalendarRefreshToken) {
+      await AvailabilityException.updateOne(
+        { _id: exceptionDoc._id },
+        { $set: { syncStatus: 'skipped', syncError: null, lastSyncedAt: new Date() } }
+      );
+      return;
+    }
+
+    const result = await syncAvailabilityExceptionToOutlook({
+      encryptedRefreshToken: integration.outlookCalendarRefreshToken,
+      calendarId: integration.outlookCalendarCalendarId || 'primary',
+      exception: {
+        date: exceptionDoc.date,
+        timezone: exceptionDoc.timezone || 'UTC',
+        allDayOff: !!exceptionDoc.allDayOff,
+        overrideAllDay: !!exceptionDoc.overrideAllDay,
+        slots: Array.isArray(exceptionDoc.slots) ? exceptionDoc.slots : [],
+        label: exceptionDoc.label || null
+      },
+      existingEventIds: Array.isArray(exceptionDoc.outlookManagedEventIds) ? exceptionDoc.outlookManagedEventIds : []
+    });
+
+    if (result?.synced) {
+      await AvailabilityException.updateOne(
+        { _id: exceptionDoc._id },
+        {
+          $set: {
+            outlookManagedEventIds: result.eventIds || [],
+            syncStatus: 'synced',
+            syncError: null,
+            lastSyncedAt: new Date()
+          }
+        }
+      );
+    }
+  } catch (err) {
+    // Best-effort sync: do not fail availability exception writes.
+    if (exceptionDoc?._id) {
+      await AvailabilityException.updateOne(
+        { _id: exceptionDoc._id },
+        { $set: { syncStatus: 'failed', syncError: err?.message || 'Sync failed', lastSyncedAt: new Date() } }
+      );
+    }
+    logger.warn('Outlook exception sync failed', { appId, date: exceptionDoc?.date, error: err?.message });
+  }
+}
 
 // Upsert availability for app by dayOfWeek - NEW APP-SCOPED ROUTE
 router.put('/apps/:appId', authenticateToken, verifyAppOwnership, async (req, res, next) => {
@@ -258,14 +322,15 @@ router.put('/apps/:appId/exceptions', authenticateToken, verifyAppOwnership, asy
     const appId = req.appId;
     if (!appId) return next(new AppError('App ID is required', 400));
 
-    const { date, timezone, allDayOff, overrideAllDay, slots } = value;
+    const { date, timezone, allDayOff, overrideAllDay, slots, label } = value;
 
     const update = {
       $set: {
         timezone: timezone || 'UTC',
         allDayOff: !!allDayOff,
         overrideAllDay: !!overrideAllDay,
-        slots: Array.isArray(slots) ? slots : []
+        slots: Array.isArray(slots) ? slots : [],
+        label: typeof label === 'string' && label.trim() ? label.trim() : null
       },
       $setOnInsert: { owner: appId, date }
     };
@@ -275,6 +340,8 @@ router.put('/apps/:appId/exceptions', authenticateToken, verifyAppOwnership, asy
       update,
       { new: true, upsert: true, setDefaultsOnInsert: true }
     );
+
+    await trySyncExceptionToOutlook(appId, doc);
 
     res.status(200).json({ status: 'success', message: 'Availability exception saved', data: { exception: doc } });
   } catch (err) { next(err); }
@@ -299,7 +366,8 @@ router.put('/apps/:appId/exceptions/bulk', authenticateToken, verifyAppOwnership
           timezone: ex.timezone || 'UTC',
           allDayOff: !!ex.allDayOff,
           overrideAllDay: !!ex.overrideAllDay,
-          slots: Array.isArray(ex.slots) ? ex.slots : []
+          slots: Array.isArray(ex.slots) ? ex.slots : [],
+          label: typeof ex.label === 'string' && ex.label.trim() ? ex.label.trim() : null
         },
         $setOnInsert: { owner: appId, date: ex.date }
       };
@@ -311,7 +379,58 @@ router.put('/apps/:appId/exceptions/bulk', authenticateToken, verifyAppOwnership
     });
 
     const results = await Promise.all(ops);
+    await Promise.all(results.map((doc) => trySyncExceptionToOutlook(appId, doc)));
     res.status(200).json({ status: 'success', message: 'Availability exceptions updated', data: { count: results.length } });
+  } catch (err) { next(err); }
+});
+
+// Delete a single availability exception for app by date (YYYY-MM-DD)
+router.delete('/apps/:appId/exceptions/:date', authenticateToken, verifyAppOwnership, async (req, res, next) => {
+  try {
+    const appId = req.appId;
+    if (!appId) return next(new AppError('App ID is required', 400));
+
+    const date = String(req.params.date || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return next(new AppError('Invalid date format. Expected YYYY-MM-DD', 400));
+    }
+
+    const existing = await AvailabilityException.findOne({ owner: appId, date }).exec();
+    if (!existing) {
+      return res.status(200).json({ status: 'success', message: 'Availability exception removed' });
+    }
+
+    // Best-effort cleanup in Outlook first, then remove DB record.
+    await trySyncExceptionToOutlook(appId, {
+      ...existing.toObject(),
+      allDayOff: false,
+      overrideAllDay: false,
+      slots: [],
+      label: null
+    });
+
+    await AvailabilityException.deleteOne({ _id: existing._id });
+    res.status(200).json({ status: 'success', message: 'Availability exception removed' });
+  } catch (err) { next(err); }
+});
+
+// Retry Outlook sync for an existing exception date.
+router.post('/apps/:appId/exceptions/:date/retry-sync', authenticateToken, verifyAppOwnership, async (req, res, next) => {
+  try {
+    const appId = req.appId;
+    if (!appId) return next(new AppError('App ID is required', 400));
+
+    const date = String(req.params.date || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return next(new AppError('Invalid date format. Expected YYYY-MM-DD', 400));
+    }
+
+    const existing = await AvailabilityException.findOne({ owner: appId, date }).exec();
+    if (!existing) return next(new AppError('Availability exception not found', 404));
+
+    await trySyncExceptionToOutlook(appId, existing);
+    const refreshed = await AvailabilityException.findById(existing._id).exec();
+    res.status(200).json({ status: 'success', message: 'Sync retry completed', data: { exception: refreshed } });
   } catch (err) { next(err); }
 });
 
