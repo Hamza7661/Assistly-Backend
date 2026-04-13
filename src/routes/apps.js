@@ -222,6 +222,33 @@ class AppController {
     return app;
   }
 
+  /**
+   * Ensure the app has usable Twilio subaccount credentials.
+   * Some older apps may not have a persisted subaccount yet.
+   */
+  static async ensureTwilioSubaccountForApp(appFull) {
+    const existingToken = decryptAuthToken(appFull?.twilioSubaccountAuthTokenEnc);
+    if (appFull?.twilioSubaccountSid && existingToken) {
+      return { sid: appFull.twilioSubaccountSid, token: existingToken };
+    }
+
+    const subFriendlyName = (appFull?.name || 'Assistly App').trim().slice(0, 64);
+    const { sid, authToken } = await createTwilioSubaccount(subFriendlyName);
+    const enc = encryptAuthToken(authToken);
+    if (!enc) {
+      throw new AppError('Failed to initialize Twilio subaccount credentials for this app.', 500);
+    }
+
+    appFull.twilioSubaccountSid = sid;
+    appFull.twilioSubaccountAuthTokenEnc = enc;
+    await appFull.save();
+    logger.info('Twilio subaccount lazily attached to app', {
+      appId: appFull._id,
+      twilioSubaccountSid: sid
+    });
+    return { sid, token: authToken };
+  }
+
   async createApp(req, res, next) {
     try {
       const userId = req.user.id;
@@ -828,14 +855,8 @@ class AppController {
       const { countryCode, limit } = req.query || {};
       await AppController.verifyAppOwnership(id, userId);
       const appFull = await App.findById(id).select('+twilioSubaccountAuthTokenEnc');
-      const token = decryptAuthToken(appFull.twilioSubaccountAuthTokenEnc);
-      if (!appFull.twilioSubaccountSid || !token) {
-        throw new AppError(
-          'WhatsApp number setup is not available yet for this app. Try again in a moment or contact support.',
-          503
-        );
-      }
-      const phoneService = createTwilioPhoneServiceForAccount(appFull.twilioSubaccountSid, token);
+      const { sid, token } = await AppController.ensureTwilioSubaccountForApp(appFull);
+      const phoneService = createTwilioPhoneServiceForAccount(sid, token);
       const code = (countryCode || '').trim().toUpperCase();
       if (!code || code.length !== 2) {
         throw new AppError('Valid countryCode (ISO 3166-1 alpha-2, e.g. US, GB) is required', 400);
@@ -867,18 +888,12 @@ class AppController {
       const { countryCode, phoneNumber: requestedNumber } = req.body || {};
       const app = await AppController.verifyAppOwnership(id, userId);
       const appFull = await App.findById(id).select('+twilioSubaccountAuthTokenEnc');
-      const token = decryptAuthToken(appFull.twilioSubaccountAuthTokenEnc);
-      if (!appFull.twilioSubaccountSid || !token) {
-        throw new AppError(
-          'WhatsApp number setup is not available yet for this app. Try again in a moment or contact support.',
-          503
-        );
-      }
+      const { sid, token } = await AppController.ensureTwilioSubaccountForApp(appFull);
       const code = (countryCode || '').trim().toUpperCase();
       if (!code || code.length !== 2) {
         throw new AppError('Valid countryCode (ISO 3166-1 alpha-2) is required', 400);
       }
-      const phoneService = createTwilioPhoneServiceForAccount(appFull.twilioSubaccountSid, token);
+      const phoneService = createTwilioPhoneServiceForAccount(sid, token);
       let result;
       if (requestedNumber && String(requestedNumber).trim().startsWith('+')) {
         result = await phoneService.purchaseNumber(String(requestedNumber).trim());
