@@ -30,8 +30,19 @@ function getDefaultIntegrationConfig() {
     conversationStyle: false,
     googleReviewEnabled: false,
     googleReviewUrl: null,
-    calendarConnected: false
+    calendarConnected: false,
+    googleCalendarConnected: false,
+    outlookCalendarConnected: false,
+    calendlyConnected: false
   };
+}
+
+function isAnyCalendarConnected(integration) {
+  return !!(
+    integration?.googleCalendarConnected ||
+    integration?.outlookCalendarConnected ||
+    integration?.calendlyConnected
+  );
 }
 
 // Slug from label so value matches displayed text (e.g. "Catering" -> "catering")
@@ -1614,7 +1625,10 @@ class AppController {
         conversationStyle: integration.conversationStyle || false,
         googleReviewEnabled: !!integration.googleReviewEnabled,
         googleReviewUrl: integration.googleReviewUrl || null,
-        calendarConnected: !!integration.googleCalendarConnected,
+        calendarConnected: isAnyCalendarConnected(integration),
+        googleCalendarConnected: !!integration.googleCalendarConnected,
+        outlookCalendarConnected: !!integration.outlookCalendarConnected,
+        calendlyConnected: !!integration.calendlyConnected,
         calendarSlotMinutes: integration.calendarSlotMinutes ?? 30,
         calendarTimezone: integration.googleCalendarTimezone || null,
         leadTypeMessages: integration.leadTypeMessages || []
@@ -1850,7 +1864,10 @@ class AppController {
         conversationStyle: integration.conversationStyle || false,
         googleReviewEnabled: !!integration.googleReviewEnabled,
         googleReviewUrl: integration.googleReviewUrl || null,
-        calendarConnected: !!integration.googleCalendarConnected,
+        calendarConnected: isAnyCalendarConnected(integration),
+        googleCalendarConnected: !!integration.googleCalendarConnected,
+        outlookCalendarConnected: !!integration.outlookCalendarConnected,
+        calendlyConnected: !!integration.calendlyConnected,
         calendarSlotMinutes: integration.calendarSlotMinutes ?? 30,
         calendarTimezone: integration.googleCalendarTimezone || null,
         leadTypeMessages: integration.leadTypeMessages || []

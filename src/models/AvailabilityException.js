@@ -18,6 +18,19 @@ const availabilityExceptionSchema = new mongoose.Schema({
   overrideAllDay: { type: Boolean, default: false },
   // If provided, these slots replace weekly slots for this specific date.
   slots: { type: [exceptionSlotSchema], default: [] },
+  // Optional user-defined label (e.g., Vacation, Team Meeting, Lunch Break).
+  label: { type: String, trim: true, maxlength: 80, default: null },
+  // Outlook events created by Assistly for this exception (for idempotent update/delete).
+  outlookManagedEventIds: { type: [String], default: [] },
+  // Outlook sync observability fields.
+  syncStatus: {
+    type: String,
+    enum: ['idle', 'pending', 'synced', 'failed', 'skipped'],
+    default: 'idle'
+  },
+  syncError: { type: String, default: null },
+  lastSyncedAt: { type: Date, default: null },
+  syncAttempts: { type: Number, default: 0 },
   updatedAt: { type: Date, default: Date.now }
 }, { timestamps: true });
 
@@ -40,7 +53,8 @@ const availabilityExceptionUpsertSchema = Joi.object({
   timezone: Joi.string().optional(),
   allDayOff: Joi.boolean().optional(),
   overrideAllDay: Joi.boolean().optional(),
-  slots: Joi.array().items(exceptionSlotJoi).optional()
+  slots: Joi.array().items(exceptionSlotJoi).optional(),
+  label: Joi.string().trim().max(80).allow('', null).optional()
 }).custom((value, helpers) => {
   const { allDayOff, overrideAllDay, slots } = value;
   if (allDayOff && (overrideAllDay || (Array.isArray(slots) && slots.length > 0))) {
@@ -59,7 +73,8 @@ const availabilityExceptionBulkSchema = Joi.object({
       timezone: Joi.string().optional(),
       allDayOff: Joi.boolean().optional(),
       overrideAllDay: Joi.boolean().optional(),
-      slots: Joi.array().items(exceptionSlotJoi).optional()
+      slots: Joi.array().items(exceptionSlotJoi).optional(),
+      label: Joi.string().trim().max(80).allow('', null).optional()
     }).custom((value, helpers) => {
       const { allDayOff, overrideAllDay, slots } = value;
       if (allDayOff && (overrideAllDay || (Array.isArray(slots) && slots.length > 0))) {

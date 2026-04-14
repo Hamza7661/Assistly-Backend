@@ -7,7 +7,7 @@ const { AvailabilityException } = require('../models/AvailabilityException');
 const { App } = require('../models/App');
 const { User } = require('../models/User');
 const { Lead } = require('../models/Lead');
-const { getAppointmentSchedulerProvider, PROVIDER_GOOGLE } = require('../integrations/appointment/appointmentSchedulerFactory');
+const { getAppointmentSchedulerProvider, PROVIDER_GOOGLE, PROVIDER_OUTLOOK } = require('../integrations/appointment/appointmentSchedulerFactory');
 const { availabilitySuccess, availabilityNotConnectedOrError } = require('../integrations/appointment/commonViewModel');
 const { generateSlotsFromRules, isAllowedSlotMinutes } = require('../services/availabilitySlotGenerator');
 const { logger } = require('../utils/logger');
@@ -21,21 +21,44 @@ const router = express.Router();
  */
 async function getProviderForApp(appId) {
   const integration = await Integration.findOne({ owner: appId })
-    .select('googleCalendarConnected calendarProvider googleCalendarRefreshToken googleCalendarCalendarId calendarSlotMinutes googleCalendarTimezone')
+    .select(
+      'googleCalendarConnected outlookCalendarConnected calendlyConnected calendarProvider googleCalendarRefreshToken googleCalendarCalendarId outlookCalendarRefreshToken outlookCalendarCalendarId calendarSlotMinutes googleCalendarTimezone'
+    )
     .lean()
     .exec();
 
-  const connected = integration?.googleCalendarConnected && integration?.googleCalendarRefreshToken;
-  const providerType = integration?.calendarProvider || (connected ? PROVIDER_GOOGLE : null);
+  let providerType = integration?.calendarProvider || null;
+  if (!providerType) {
+    if (integration?.googleCalendarRefreshToken) providerType = PROVIDER_GOOGLE;
+    else if (integration?.outlookCalendarRefreshToken) providerType = PROVIDER_OUTLOOK;
+  }
+  const hasGoogleToken = !!integration?.googleCalendarRefreshToken;
+  const hasOutlookToken = !!integration?.outlookCalendarRefreshToken;
+  const connectedByFlag = !!(integration?.googleCalendarConnected || integration?.outlookCalendarConnected || integration?.calendlyConnected);
+  // Backward compatibility: old records only had googleCalendarConnected.
+  const connected = connectedByFlag && (hasGoogleToken || hasOutlookToken);
 
   if (!connected || !providerType) {
     return { provider: null, integration };
   }
 
-  const credentials = {
-    encryptedRefreshToken: integration.googleCalendarRefreshToken,
-    calendarId: integration.googleCalendarCalendarId || 'primary'
-  };
+  let credentials = null;
+  if (providerType === PROVIDER_GOOGLE) {
+    credentials = {
+      encryptedRefreshToken: integration.googleCalendarRefreshToken,
+      calendarId: integration.googleCalendarCalendarId || 'primary'
+    };
+  } else if (providerType === PROVIDER_OUTLOOK) {
+    credentials = {
+      encryptedRefreshToken: integration.outlookCalendarRefreshToken,
+      calendarId: integration.outlookCalendarCalendarId || 'primary'
+    };
+  }
+
+  if (!credentials?.encryptedRefreshToken) {
+    return { provider: null, integration };
+  }
+
   const provider = getAppointmentSchedulerProvider(providerType, credentials);
   return { provider, integration };
 }

@@ -1,6 +1,6 @@
 /**
  * Calendar OAuth connect/disconnect. Used by the frontend to attach a calendar (e.g. Google).
- * On connect we set calendarProvider + googleCalendarConnected and store encrypted refresh token.
+ * On connect we set provider-specific calendar connected flags and store encrypted token.
  */
 const express = require('express');
 const { google } = require('googleapis');
@@ -11,7 +11,8 @@ const { Integration } = require('../models/Integration');
 const { encrypt } = require('../utils/encrypt');
 const cacheManager = require('../utils/cache');
 const { logger } = require('../utils/logger');
-const { PROVIDER_GOOGLE } = require('../integrations/appointment/appointmentSchedulerFactory');
+const { PROVIDER_GOOGLE, PROVIDER_OUTLOOK } = require('../integrations/appointment/appointmentSchedulerFactory');
+const { getCalendarAccountEmail } = require('../services/outlookCalendarService');
 
 const router = express.Router();
 
@@ -20,6 +21,70 @@ const SCOPES = [
   'https://www.googleapis.com/auth/calendar.events',
   'https://www.googleapis.com/auth/userinfo.email'
 ];
+const OUTLOOK_SCOPES = [
+  'offline_access',
+  'openid',
+  'profile',
+  'email',
+  'https://graph.microsoft.com/User.Read',
+  'https://graph.microsoft.com/Calendars.Read',
+  'https://graph.microsoft.com/Calendars.ReadWrite'
+];
+
+function sanitizeEnv(value) {
+  return String(value || '').trim().replace(/^["']|["']$/g, '');
+}
+
+function resolveOutlookTenantId() {
+  const t = sanitizeEnv(process.env.OUTLOOK_CALENDAR_TENANT_ID);
+  return t || 'common';
+}
+
+function resolveProvider(req) {
+  const raw = (req.query.provider || req.body?.provider || PROVIDER_GOOGLE).toString().trim().toLowerCase();
+  const outlookAliases = new Set([
+    PROVIDER_OUTLOOK,
+    'microsoft',
+    'office365',
+    'm365',
+    'ms'
+  ]);
+  if (outlookAliases.has(raw)) return PROVIDER_OUTLOOK;
+  return PROVIDER_GOOGLE;
+}
+
+function encodeState(stateObj) {
+  return Buffer.from(JSON.stringify(stateObj), 'utf8').toString('base64url');
+}
+
+function decodeState(state) {
+  try {
+    const decoded = Buffer.from(state, 'base64url').toString('utf8');
+    // backward compatibility for old state format where state was only appId
+    if (decoded.startsWith('{')) return JSON.parse(decoded);
+    return { appId: decoded, provider: PROVIDER_GOOGLE };
+  } catch (_) {
+    return null;
+  }
+}
+
+function buildIntegrationRedirect(frontendBase, calendarStatus) {
+  try {
+    const base = new URL(frontendBase || 'http://localhost:3000');
+    const normalizedPath = base.pathname.replace(/\/+$/, '');
+    base.pathname = normalizedPath.endsWith('/integration') ? normalizedPath : '/integration';
+    base.search = '';
+    base.hash = '';
+    base.searchParams.set('calendar', calendarStatus);
+    return base.toString();
+  } catch (_) {
+    const fallbackBase = String(frontendBase || 'http://localhost:3000').replace(/\/+$/, '');
+    const withoutDupIntegration = fallbackBase.endsWith('/integration')
+      ? fallbackBase
+      : `${fallbackBase}/integration`;
+    return `${withoutDupIntegration}?calendar=${encodeURIComponent(calendarStatus)}`;
+  }
+}
 
 /**
  * GET /apps/:appId/calendar/auth
@@ -29,6 +94,27 @@ router.get('/apps/:appId/calendar/auth', authenticateToken, verifyAppOwnership, 
   try {
     const appId = req.appId || req.params.appId;
     if (!appId) return next(new AppError('App ID is required', 400));
+    const provider = resolveProvider(req);
+
+    if (provider === PROVIDER_OUTLOOK) {
+      const clientId = sanitizeEnv(process.env.OUTLOOK_CALENDAR_CLIENT_ID);
+      const tenantId = resolveOutlookTenantId();
+      const redirectUri = sanitizeEnv(process.env.OUTLOOK_CALENDAR_REDIRECT_URI || `${process.env.APP_URL || 'http://localhost:5000'}/api/v1/integration/calendar/callback`);
+      if (!clientId) {
+        return next(new AppError('Outlook Calendar OAuth is not configured. Set OUTLOOK_CALENDAR_CLIENT_ID.', 503));
+      }
+
+      const state = encodeState({ appId: String(appId), provider: PROVIDER_OUTLOOK });
+      const authorizeUrl = new URL(`https://login.microsoftonline.com/${encodeURIComponent(tenantId)}/oauth2/v2.0/authorize`);
+      authorizeUrl.searchParams.set('client_id', clientId);
+      authorizeUrl.searchParams.set('response_type', 'code');
+      authorizeUrl.searchParams.set('redirect_uri', redirectUri);
+      authorizeUrl.searchParams.set('response_mode', 'query');
+      authorizeUrl.searchParams.set('scope', OUTLOOK_SCOPES.join(' '));
+      authorizeUrl.searchParams.set('prompt', 'select_account');
+      authorizeUrl.searchParams.set('state', state);
+      return res.redirect(authorizeUrl.toString());
+    }
 
     const clientId = (process.env.GOOGLE_CALENDAR_CLIENT_ID || '').trim().replace(/^["']|["']$/g, '');
     const clientSecret = (process.env.GOOGLE_CALENDAR_CLIENT_SECRET || '').trim().replace(/^["']|["']$/g, '');
@@ -38,7 +124,7 @@ router.get('/apps/:appId/calendar/auth', authenticateToken, verifyAppOwnership, 
     }
 
     const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
-    const state = Buffer.from(String(appId), 'utf8').toString('base64url');
+    const state = encodeState({ appId: String(appId), provider: PROVIDER_GOOGLE });
     const url = oauth2Client.generateAuthUrl({
       access_type: 'offline',
       prompt: 'consent',
@@ -60,6 +146,26 @@ router.get('/apps/:appId/calendar/auth-url', authenticateToken, verifyAppOwnersh
   try {
     const appId = req.appId || req.params.appId;
     if (!appId) return next(new AppError('App ID is required', 400));
+    const provider = resolveProvider(req);
+
+    if (provider === PROVIDER_OUTLOOK) {
+      const clientId = sanitizeEnv(process.env.OUTLOOK_CALENDAR_CLIENT_ID);
+      const tenantId = resolveOutlookTenantId();
+      const redirectUri = sanitizeEnv(process.env.OUTLOOK_CALENDAR_REDIRECT_URI || `${process.env.APP_URL || 'http://localhost:5000'}/api/v1/integration/calendar/callback`);
+      if (!clientId) {
+        return next(new AppError('Outlook Calendar OAuth is not configured.', 503));
+      }
+      const state = encodeState({ appId: String(appId), provider: PROVIDER_OUTLOOK });
+      const authorizeUrl = new URL(`https://login.microsoftonline.com/${encodeURIComponent(tenantId)}/oauth2/v2.0/authorize`);
+      authorizeUrl.searchParams.set('client_id', clientId);
+      authorizeUrl.searchParams.set('response_type', 'code');
+      authorizeUrl.searchParams.set('redirect_uri', redirectUri);
+      authorizeUrl.searchParams.set('response_mode', 'query');
+      authorizeUrl.searchParams.set('scope', OUTLOOK_SCOPES.join(' '));
+      authorizeUrl.searchParams.set('prompt', 'select_account');
+      authorizeUrl.searchParams.set('state', state);
+      return res.status(200).json({ status: 'success', data: { url: authorizeUrl.toString() } });
+    }
 
     const clientId = (process.env.GOOGLE_CALENDAR_CLIENT_ID || '').trim().replace(/^["']|["']$/g, '');
     const clientSecret = (process.env.GOOGLE_CALENDAR_CLIENT_SECRET || '').trim().replace(/^["']|["']$/g, '');
@@ -69,7 +175,7 @@ router.get('/apps/:appId/calendar/auth-url', authenticateToken, verifyAppOwnersh
     }
 
     const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
-    const state = Buffer.from(String(appId), 'utf8').toString('base64url');
+    const state = encodeState({ appId: String(appId), provider: PROVIDER_GOOGLE });
     const url = oauth2Client.generateAuthUrl({
       access_type: 'offline',
       prompt: 'consent',
@@ -91,81 +197,114 @@ router.get('/calendar/callback', async (req, res, next) => {
   try {
     const { code, state, error } = req.query;
     const frontendBase = process.env.FRONTEND_BASE_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
-    const successUrl = `${frontendBase.replace(/\/$/, '')}/integration?calendar=connected`;
-    const failureUrl = `${frontendBase.replace(/\/$/, '')}/integration?calendar=error`;
+    const successUrl = buildIntegrationRedirect(frontendBase, 'connected');
+    const failureUrl = buildIntegrationRedirect(frontendBase, 'error');
 
     if (error) {
-      logger.warn('Google Calendar OAuth error', { error });
+      logger.warn('Calendar OAuth provider returned error', { error });
       return res.redirect(failureUrl);
     }
     if (!code || !state) {
       return res.redirect(failureUrl);
     }
 
-    let appId;
-    try {
-      appId = Buffer.from(state, 'base64url').toString('utf8');
-    } catch (_) {
+    const parsedState = decodeState(state);
+    if (!parsedState?.appId) {
       return res.redirect(failureUrl);
     }
+    const appId = parsedState.appId;
+    const provider = parsedState.provider === PROVIDER_OUTLOOK ? PROVIDER_OUTLOOK : PROVIDER_GOOGLE;
 
-    const clientId = (process.env.GOOGLE_CALENDAR_CLIENT_ID || '').trim().replace(/^["']|["']$/g, '');
-    const clientSecret = (process.env.GOOGLE_CALENDAR_CLIENT_SECRET || '').trim().replace(/^["']|["']$/g, '');
-    const redirectUri = (process.env.GOOGLE_CALENDAR_REDIRECT_URI || `${process.env.APP_URL || 'https://upzilo-backend.onrender.com'}/api/v1/integration/calendar/callback`).trim().replace(/^["']|["']$/g, '');
-    if (!clientId || !clientSecret) {
-      return res.redirect(failureUrl);
-    }
-
-    const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
-    let tokens;
-    try {
-      const result = await oauth2Client.getToken(code);
-      tokens = result.tokens;
-    } catch (tokenErr) {
-      logger.warn('Google Calendar getToken failed', {
-        message: tokenErr.message,
-        code: tokenErr.code,
-        response: tokenErr.response?.data,
-        clientIdPrefix: clientId ? `${clientId.substring(0, 25)}...` : '(empty)',
-        clientSecretLength: clientSecret.length,
-        redirectUri
+    let refreshToken = null;
+    let calendarAccountEmail = null;
+    let calendarTimezone = null;
+    if (provider === PROVIDER_OUTLOOK) {
+      const clientId = sanitizeEnv(process.env.OUTLOOK_CALENDAR_CLIENT_ID);
+      const clientSecret = sanitizeEnv(process.env.OUTLOOK_CALENDAR_CLIENT_SECRET);
+      const tenantId = resolveOutlookTenantId();
+      const redirectUri = sanitizeEnv(process.env.OUTLOOK_CALENDAR_REDIRECT_URI || `${process.env.APP_URL || 'http://localhost:5000'}/api/v1/integration/calendar/callback`);
+      if (!clientId || !clientSecret) {
+        return res.redirect(failureUrl);
+      }
+      const tokenUrl = `https://login.microsoftonline.com/${encodeURIComponent(tenantId)}/oauth2/v2.0/token`;
+      const body = new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: 'authorization_code',
+        code: String(code),
+        redirect_uri: redirectUri,
+        scope: OUTLOOK_SCOPES.join(' ')
       });
-      return res.redirect(failureUrl);
+      const tokenRes = await fetch(tokenUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body
+      });
+      if (!tokenRes.ok) {
+        const text = await tokenRes.text().catch(() => '');
+        logger.warn('Outlook Calendar getToken failed', { status: tokenRes.status, body: text });
+        return res.redirect(failureUrl);
+      }
+      const tokenJson = await tokenRes.json();
+      refreshToken = tokenJson.refresh_token || null;
+      if (refreshToken) {
+        calendarAccountEmail = await getCalendarAccountEmail(encrypt(refreshToken));
+      }
+    } else {
+      const clientId = (process.env.GOOGLE_CALENDAR_CLIENT_ID || '').trim().replace(/^["']|["']$/g, '');
+      const clientSecret = (process.env.GOOGLE_CALENDAR_CLIENT_SECRET || '').trim().replace(/^["']|["']$/g, '');
+      const redirectUri = (process.env.GOOGLE_CALENDAR_REDIRECT_URI || `${process.env.APP_URL || 'https://upzilo-backend.onrender.com'}/api/v1/integration/calendar/callback`).trim().replace(/^["']|["']$/g, '');
+      if (!clientId || !clientSecret) {
+        return res.redirect(failureUrl);
+      }
+
+      const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+      let tokens;
+      try {
+        const result = await oauth2Client.getToken(code);
+        tokens = result.tokens;
+      } catch (tokenErr) {
+        logger.warn('Google Calendar getToken failed', {
+          message: tokenErr.message,
+          code: tokenErr.code,
+          response: tokenErr.response?.data,
+          clientIdPrefix: clientId ? `${clientId.substring(0, 25)}...` : '(empty)',
+          clientSecretLength: clientSecret.length,
+          redirectUri
+        });
+        return res.redirect(failureUrl);
+      }
+      refreshToken = tokens.refresh_token;
+      try {
+        oauth2Client.setCredentials(tokens);
+        const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
+        const userinfo = await oauth2.userinfo.get();
+        if (userinfo.data && userinfo.data.email) {
+          calendarAccountEmail = userinfo.data.email;
+        }
+      } catch (emailErr) {
+        logger.warn('Google Calendar: could not fetch account email', { message: emailErr.message });
+      }
+      try {
+        const calendarApi = google.calendar({ version: 'v3', auth: oauth2Client });
+        const calInfo = await calendarApi.calendars.get({ calendarId: 'primary' });
+        if (calInfo.data && calInfo.data.timeZone) {
+          calendarTimezone = calInfo.data.timeZone;
+        }
+      } catch (tzErr) {
+        logger.warn('Google Calendar: could not fetch calendar timezone', { message: tzErr.message });
+      }
     }
 
-    const refreshToken = tokens.refresh_token;
     if (!refreshToken) {
-      logger.warn('Google Calendar OAuth: no refresh_token in response (user may have already authorized; try revoking app access at myaccount.google.com/permissions and connect again)');
+      logger.warn(`${provider} OAuth: no refresh_token in response`);
       return res.redirect(failureUrl);
     }
 
     const encrypted = encrypt(refreshToken);
     if (!encrypted) {
-      logger.warn('Google Calendar: encryption key not set, cannot store token');
+      logger.warn('Calendar token encryption key not set, cannot store token', { provider });
       return res.redirect(failureUrl);
-    }
-
-    let calendarAccountEmail = null;
-    let calendarTimezone = null;
-    try {
-      oauth2Client.setCredentials(tokens);
-      const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
-      const userinfo = await oauth2.userinfo.get();
-      if (userinfo.data && userinfo.data.email) {
-        calendarAccountEmail = userinfo.data.email;
-      }
-    } catch (emailErr) {
-      logger.warn('Google Calendar: could not fetch account email', { message: emailErr.message });
-    }
-
-    try {
-      const calendarApi = google.calendar({ version: 'v3', auth: oauth2Client });
-      const calInfo = await calendarApi.calendars.get({ calendarId: 'primary' });
-      if (calInfo.data && calInfo.data.timeZone) {
-        calendarTimezone = calInfo.data.timeZone;
-      }
-    } catch (tzErr) {
-      logger.warn('Google Calendar: could not fetch calendar timezone', { message: tzErr.message });
     }
 
     let integration = await Integration.findOne({ owner: appId });
@@ -186,12 +325,16 @@ router.get('/calendar/callback', async (req, res, next) => {
     await Integration.findOneAndUpdate(
       { owner: appId },
       {
-        googleCalendarRefreshToken: encrypted,
-        googleCalendarConnected: true,
-        calendarProvider: PROVIDER_GOOGLE,
-        googleCalendarCalendarId: 'primary',
+        googleCalendarRefreshToken: provider === PROVIDER_GOOGLE ? encrypted : null,
+        googleCalendarCalendarId: provider === PROVIDER_GOOGLE ? 'primary' : null,
+        outlookCalendarRefreshToken: provider === PROVIDER_OUTLOOK ? encrypted : null,
+        outlookCalendarCalendarId: provider === PROVIDER_OUTLOOK ? 'primary' : null,
+        googleCalendarConnected: provider === PROVIDER_GOOGLE,
+        outlookCalendarConnected: provider === PROVIDER_OUTLOOK,
+        calendlyConnected: false,
+        calendarProvider: provider,
         calendarAccountEmail: calendarAccountEmail || null,
-        googleCalendarTimezone: calendarTimezone || null
+        googleCalendarTimezone: provider === PROVIDER_GOOGLE ? calendarTimezone || null : null
       },
       { new: true }
     );
@@ -200,18 +343,18 @@ router.get('/calendar/callback', async (req, res, next) => {
       await cacheManager.del(cacheManager.getAppContextKey(appId));
     } catch (_) {}
 
-    logger.info('Google Calendar connected for app', { appId });
+    logger.info('Calendar connected for app', { appId, provider });
     res.redirect(successUrl);
   } catch (err) {
     logger.error('Calendar callback error', { error: err.message, stack: err.stack, code: err.code });
     const frontendBase = process.env.FRONTEND_BASE_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
-    res.redirect(`${frontendBase.replace(/\/$/, '')}/integration?calendar=error`);
+    res.redirect(buildIntegrationRedirect(frontendBase, 'error'));
   }
 });
 
 /**
  * DELETE /apps/:appId/calendar
- * Disconnect calendar: clear token, set calendarConnected false and calendarProvider null.
+ * Disconnect calendar: clear tokens and reset all provider-specific flags.
  */
 router.delete('/apps/:appId/calendar', authenticateToken, verifyAppOwnership, async (req, res, next) => {
   try {
@@ -222,7 +365,10 @@ router.delete('/apps/:appId/calendar', authenticateToken, verifyAppOwnership, as
       { owner: appId },
       {
         googleCalendarRefreshToken: null,
+        outlookCalendarRefreshToken: null,
         googleCalendarConnected: false,
+        outlookCalendarConnected: false,
+        calendlyConnected: false,
         calendarProvider: null,
         calendarAccountEmail: null,
         googleCalendarTimezone: null
