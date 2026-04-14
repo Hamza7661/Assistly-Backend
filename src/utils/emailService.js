@@ -256,6 +256,12 @@ class EmailService {
     const endText = appointmentData?.endText || '';
     const calendarLink = appointmentData?.link || '';
     const postBookingNote = appointmentData?.postBookingNote || '';
+    const contactPhone =
+      businessData?.contactPhone ||
+      businessData?.phone ||
+      businessData?.twilioPhoneNumber ||
+      businessData?.whatsappNumber ||
+      '';
 
     const theme = getCompanyTheme(companyName, {
       appId: businessData?.appId,
@@ -270,6 +276,7 @@ class EmailService {
       endText,
       calendarLink,
       postBookingNote,
+      contactPhone,
       theme,
     });
 
