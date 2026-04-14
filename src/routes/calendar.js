@@ -170,8 +170,10 @@ router.post('/apps/:appId/appointments', verifySignedThirdPartyForParamUser, asy
 
     if (viewModel.success) {
       try {
-        const app = await App.findById(appId).select('owner name').lean().exec();
-        const owner = app?.owner ? await User.findById(app.owner).select('email firstName lastName').lean().exec() : null;
+        const app = await App.findById(appId).select('owner name twilioPhoneNumber whatsappNumber').lean().exec();
+        const owner = app?.owner
+          ? await User.findById(app.owner).select('email firstName lastName phoneNumber').lean().exec()
+          : null;
         const integration = await Integration.findOne({ owner: appId })
           .select('assistantName companyName primaryColor chatbotImage googleCalendarTimezone')
           .lean()
@@ -187,6 +189,8 @@ router.post('/apps/:appId/appointments', verifySignedThirdPartyForParamUser, asy
           companyName: resolvedCompanyName,
           name: resolvedCompanyName,
           email: 'socialaliafzal@gmail.com',
+          // Prefer owner's user phone; fallback to app-level numbers.
+          phone: owner?.phoneNumber || app?.twilioPhoneNumber || app?.whatsappNumber || '',
           primaryColor: integration?.primaryColor || '#c01721',
           logoUrl,
         };

@@ -308,10 +308,14 @@ function buildCustomerConfirmationHtml({
   endText,
   calendarLink,
   postBookingNote,
+  contactPhone,
   theme,
 }) {
   const header = _customerConfirmationHeader(theme);
   const dateTimeText = _formatDateTimeRange(startText, endText);
+  const contactLine = contactPhone
+    ? `If you need to reschedule or have any questions, please contact us directly at <strong>${contactPhone}</strong>.`
+    : 'If you need to reschedule or have any questions, please contact us directly.';
 
   const body = `
     <div style="padding:28px 28px 8px;font-family:${theme.bodyFontFamily};color:#1f2937;line-height:1.6;">
@@ -335,9 +339,7 @@ function buildCustomerConfirmationHtml({
         <p style="margin:0 0 4px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:${theme.primaryColor};">Important Instructions</p>
         <div style="margin:0;font-size:13px;color:#374151;line-height:1.6;">${postBookingNote}</div>
       </div>` : ''}
-      <p style="margin-top:24px;font-size:14px;">
-        If you need to reschedule or have any questions, please contact us directly.
-      </p>
+      <p style="margin-top:24px;font-size:14px;">${contactLine}</p>
       <p style="margin-top:20px;font-size:14px;">
         Warm regards,<br/>
         <strong style="font-family:${theme.fontFamily};color:${theme.primaryColor};">${theme.companyName}</strong>
