@@ -2,9 +2,9 @@ const sgMail = require('@sendgrid/mail');
 const { logger } = require('./logger');
 const {
   getCompanyTheme,
+  buildBrandedOtpHtml,
   buildCustomerConfirmationHtml,
   buildBusinessNotificationHtml,
-  buildFacelismVerificationCodeHtml,
 } = require('./emailTemplates');
 
 class EmailService {
@@ -213,61 +213,36 @@ class EmailService {
       throw new Error('OTP code is required');
     }
 
-    const rawBrand =
-      templateData?.branding ||
-      templateData?.brand ||
-      templateData?.companyName ||
-      '';
-    const normalizedBrand = String(rawBrand).trim().toLowerCase();
-    const isFacelismBranding =
-      normalizedBrand === 'facelism' ||
-      normalizedBrand === 'facelism luxe' ||
-      normalizedBrand.replace(/[^a-z0-9]/g, '') === 'facelism';
+    // Brand config is resolved upstream in otp.js from the app's Integration record.
+    // emailService has no knowledge of specific brands — it just renders with what it receives.
+    const companyName = String(templateData?.companyName || '').trim();
+    const theme = getCompanyTheme(companyName, {
+      appId: templateData?.appId,
+      primaryColor: templateData?.primaryColor,
+      logoUrl: templateData?.logoUrl,
+    });
 
-    if (!templateData.htmlTemplate && !isFacelismBranding) {
-      throw new Error('HTML template is required');
-    }
+    const htmlContent = buildBrandedOtpHtml({
+      customerName: firstName || 'Customer',
+      otp,
+      supportEmail: templateData?.supportEmail || '',
+      theme,
+    });
 
-    // Replace placeholders in HTML content with real data
-    let htmlContent = templateData.htmlTemplate;
-    let textContent = templateData.textContent;
+    const textContent =
+      templateData?.textContent ||
+      `Hello ${firstName || 'Customer'}, your ${companyName || 'verification'} code is ${otp}. It expires in 10 minutes.`;
 
-    if (isFacelismBranding) {
-      htmlContent = buildFacelismVerificationCodeHtml({
-        customerName: firstName || 'Customer',
-        otp,
-        supportEmail: templateData?.supportEmail || 'info@facelism.com',
-      });
-      textContent =
-        textContent ||
-        `Hello ${firstName || 'Customer'}, your Facelism verification code is ${otp}. This code will expire in 10 minutes.`;
-    }
-
-    // Replace OTP placeholders
-    if (htmlContent) {
-      htmlContent = htmlContent
-        .replace(/{{OTP}}/g, otp)
-        .replace(/{{FIRST_NAME}}/g, firstName || 'Customer');
-    }
-
-    if (textContent) {
-      textContent = textContent
-        .replace(/{{OTP}}/g, otp)
-        .replace(/{{FIRST_NAME}}/g, firstName || 'Customer');
-    }
-
-    const emailData = {
+    return this.sendEmail({
       to: email,
-      subject: isFacelismBranding
-        ? (process.env.EMAIL_OTP_SUBJECT_FACELISM || 'Your Verification Code - Facelism')
-        : (process.env.EMAIL_OTP_SUBJECT || 'Your Verification Code - UpZilo'),
-      htmlContent: htmlContent,
-      textContent: textContent,
-      templateId: templateData.templateId,
-      ...(isFacelismBranding ? { fromName: process.env.FACELISM_FROM_NAME || 'Facelism' } : {})
-    };
-
-    return this.sendEmail(emailData);
+      subject: companyName
+        ? `Your Verification Code – ${companyName}`
+        : (process.env.EMAIL_OTP_SUBJECT || 'Your Verification Code'),
+      htmlContent,
+      textContent,
+      templateId: templateData?.templateId,
+      fromName: companyName || undefined,
+    });
   }
 
   async sendAppointmentConfirmationEmail(customerData, appointmentData, businessData = {}) {
@@ -283,6 +258,7 @@ class EmailService {
     const postBookingNote = appointmentData?.postBookingNote || '';
 
     const theme = getCompanyTheme(companyName, {
+      appId: businessData?.appId,
       primaryColor: businessData?.primaryColor,
       logoUrl: businessData?.logoUrl,
     });
