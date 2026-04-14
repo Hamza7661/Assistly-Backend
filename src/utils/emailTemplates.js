@@ -290,7 +290,7 @@ function _footer(theme, platformName) {
   const upziloLink = 'https://upzilo.com';
   const linkColor = theme.footerLinkColor || theme.footerTextColor;
   return `
-    <div style="background:${theme.footerBg};padding:18px 24px;text-align:center;border-top:1px solid #fecdd3;">
+    <div style="background:${theme.footerBg};padding:18px 24px;text-align:center;border-top:1px solid ${theme.footerBorderColor || '#fecdd3'};">
       ${theme.tagline ? `<p style="color:${theme.footerTextColor};font-size:12px;letter-spacing:0.15em;margin:0 0 6px;text-transform:uppercase;">${theme.tagline}</p>` : ''}
       <p style="color:${theme.footerTextColor};font-size:11px;margin:0;">
         Powered by&nbsp;<a href="${upziloLink}" target="_blank" style="color:${linkColor};font-weight:700;text-decoration:none;letter-spacing:0.04em;">${platform}</a>&nbsp;|&nbsp; This is an automated message, please do not reply.
