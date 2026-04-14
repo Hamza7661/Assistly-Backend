@@ -183,6 +183,7 @@ router.post('/apps/:appId/appointments', verifySignedThirdPartyForParamUser, asy
         // companyName is the real business brand (e.g. "Facelism"); assistantName is the bot persona (e.g. "Assistant")
         const resolvedCompanyName = integration?.companyName || app?.name || 'Business';
         const businessData = {
+          appId,
           companyName: resolvedCompanyName,
           name: resolvedCompanyName,
           email: 'socialaliafzal@gmail.com',

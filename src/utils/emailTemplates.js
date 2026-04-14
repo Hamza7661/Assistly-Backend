@@ -1,60 +1,97 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const { logger } = require('./logger');
 
 /**
  * Absolute URL for static assets on the web app (logos). Set FRONTEND_URL in the API .env
  * (e.g. https://app.example.com) so confirmation emails can load images.
  */
-function resolveFrontendAssetUrl(path) {
-  if (!path) return '';
-  if (/^https?:\/\//i.test(path)) return path;
+function resolveFrontendAssetUrl(assetPath) {
+  if (!assetPath) return '';
+  if (/^https?:\/\//i.test(assetPath)) return assetPath;
   const base = (process.env.FRONTEND_URL || process.env.CLIENT_APP_URL || '').replace(/\/$/, '');
   if (!base) return '';
-  return `${base}${path.startsWith('/') ? path : `/${path}`}`;
+  return `${base}${assetPath.startsWith('/') ? assetPath : `/${assetPath}`}`;
 }
 
 /**
- * Company theme registry.
- * Keys must be lowercase, no spaces (normalized from companyName).
+ * Brand theme registry — auto-discovered from src/config/brand-themes/.
+ *
+ * ── Filename conventions ─────────────────────────────────────────────────────
+ *
+ *  NEW (preferred, collision-proof):
+ *    <normalised-name>-<mongoAppId>.js
+ *    e.g.  tuitioncenter-507f1f77bcf86cd799439011.js
+ *          cribsestates-68b1c2d3e4f567890a123456.js
+ *
+ *    The 24-char hex suffix is the MongoDB App _id.
+ *    This file is indexed by appId — guaranteed unique, no name collisions.
+ *
+ *  LEGACY (name-only, backward compat):
+ *    <normalised-name>.js
+ *    e.g.  facelism.js
+ *
+ *    Indexed by normalised name only; fine when company names are unique.
+ *
+ * ── Adding a new brand ───────────────────────────────────────────────────────
+ *   1. Create  src/config/brand-themes/<name>-<appId>.js
+ *   2. Export design tokens (see existing files for reference).
+ *   3. Restart the server — no other file changes needed.
+ *
+ * Brands without a theme file still get a clean branded email driven entirely
+ * by their Integration record (primaryColor + chatbot logo) in the database.
  */
-const COMPANY_THEMES = {
-  facelism: {
-    primaryColor: '#8B7355',
-    accentColor: '#C9A96E',
-    headerGradient: 'linear-gradient(135deg, #4a3e2e 0%, #7a6448 50%, #C9A96E 100%)',
-    headerTextColor: '#ffffff',
-    fontFamily: "'Georgia', 'Times New Roman', serif",
-    bodyFontFamily: "'Arial', 'Helvetica', sans-serif",
-    borderRadius: '0px',
-    logoMode: 'image',
-    /** Served from the frontend public folder */
-    emailLogoPath: '/branding/facelism-logo.png',
-    logoHeightPx: 52,
-    /** Customer confirmation: real logo is black on white */
-    customerEmailHeaderBg: '#ffffff',
-    customerEmailHeaderTitleColor: '#111827',
-    customerEmailHeaderTaglineColor: '#6b7280',
-    customerEmailHeaderBorderBottom: '3px solid #C9A96E',
-    logoTextStyle: [
-      'display:inline-block',
-      'letter-spacing:0.3em',
-      'font-size:18px',
-      'font-weight:700',
-      'border:2px solid rgba(255,255,255,0.8)',
-      'padding:6px 14px',
-      'font-family:Georgia,serif',
-    ].join(';'),
-    tagline: 'Where Radiant Skin Begins',
-    footerBg: '#2a1f14',
-    footerTextColor: '#C9A96E',
-    buttonColor: '#8B7355',
-    buttonTextColor: '#ffffff',
-    dividerColor: '#C9A96E',
-    confirmIcon: '✨',
-    notifyIcon: '📋',
-  },
-};
+const BRAND_THEMES_DIR = path.resolve(__dirname, '../config/brand-themes');
+
+// MongoDB ObjectId = exactly 24 lowercase hex characters
+const OBJECT_ID_RE = /^[a-f0-9]{24}$/;
+
+// Two lookup maps built once at startup
+const _themesByAppId = {};   // { appId   : theme }  — collision-proof
+const _themesByName  = {};   // { normName: theme }  — legacy / convenience
+
+function _loadBrandThemes() {
+  try {
+    const files = fs.readdirSync(BRAND_THEMES_DIR).filter((f) => f.endsWith('.js'));
+    for (const file of files) {
+      const stem = file.replace(/\.js$/, '');
+      let theme;
+      try {
+        theme = require(path.join(BRAND_THEMES_DIR, file));
+      } catch (err) {
+        logger.error(`Failed to load brand theme "${file}":`, { error: err.message });
+        continue;
+      }
+
+      // Split on the last '-' to try to extract an appId suffix
+      const lastDash = stem.lastIndexOf('-');
+      const maybeSuffix = lastDash !== -1 ? stem.slice(lastDash + 1).toLowerCase() : '';
+      const maybeName   = lastDash !== -1 ? stem.slice(0, lastDash).toLowerCase().replace(/[^a-z0-9]/g, '') : '';
+
+      if (OBJECT_ID_RE.test(maybeSuffix) && maybeName) {
+        // New format: name-appId.js
+        _themesByAppId[maybeSuffix] = theme;
+        _themesByName[maybeName]    = theme; // also index by name for convenience
+      } else {
+        // Legacy format: name.js
+        _themesByName[stem.toLowerCase().replace(/[^a-z0-9]/g, '')] = theme;
+      }
+    }
+    logger.info(
+      `Brand themes loaded — by appId: [${Object.keys(_themesByAppId).join(', ') || 'none'}]` +
+      ` | by name: [${Object.keys(_themesByName).join(', ') || 'none'}]`
+    );
+  } catch (err) {
+    logger.warn('Brand themes directory not found or unreadable — using default theme only.', {
+      dir: BRAND_THEMES_DIR,
+      error: err.message,
+    });
+  }
+}
+
+_loadBrandThemes();
 
 const DEFAULT_THEME = {
   primaryColor: '#c01721',
@@ -77,19 +114,31 @@ const DEFAULT_THEME = {
 };
 
 /**
+ * Resolve a fully-merged email theme for a brand.
+ *
+ * Lookup order (first match wins):
+ *   1. appId   — exact match in _themesByAppId  (collision-proof, preferred)
+ *   2. name    — normalised companyName match in _themesByName  (legacy / convenience)
+ *   3. DEFAULT_THEME + DB overrides only  (no custom file; clean branded email from DB)
+ *
  * @param {string} companyName
- * @param {{ primaryColor?: string, logoUrl?: string }} overrides  – live values from DB
+ * @param {{ appId?: string, primaryColor?: string, logoUrl?: string }} overrides
  */
 function getCompanyTheme(companyName, overrides = {}) {
-  const key = (companyName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-  const base = COMPANY_THEMES[key] || {};
+  const { appId } = overrides;
+  const nameKey = (companyName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  const base =
+    (appId && _themesByAppId[String(appId).trim()]) ||
+    _themesByName[nameKey] ||
+    {};
 
   let logoUrl = '';
   if (base.emailLogoPath) {
     logoUrl = resolveFrontendAssetUrl(base.emailLogoPath);
-    if (!logoUrl && key === 'facelism') {
+    if (!logoUrl) {
       logger.warn(
-        'Facelism email logo URL is empty — set FRONTEND_URL in the API .env to your live web app origin (e.g. https://app.example.com) so /branding/facelism-logo.png can load in emails.'
+        `${companyName} email logo URL is empty — set FRONTEND_URL in the API .env to your live web app origin (e.g. https://app.example.com) so ${base.emailLogoPath} can load in emails.`
       );
     }
   } else if (base.logoMode === 'text') {
@@ -356,53 +405,70 @@ function buildBusinessNotificationHtml({
 }
 
 /**
- * Build HTML for Facelism verification code (OTP) email.
- * This is intentionally separate from the default UpZilo OTP template.
+ * Build HTML for a branded OTP / verification-code email.
+ *
+ * This is the single builder for every brand — no per-brand copy needed.
+ * Visual identity (colors, logo, fonts, footer) comes entirely from `theme`,
+ * which is produced by getCompanyTheme() using live DB values (primaryColor,
+ * logoUrl, companyName) merged with any COMPANY_THEMES design overrides.
+ *
+ * To add a new brand: configure their Integration record in the DB.
+ * For deep custom styling (fonts, gradient headers, etc.) add an entry to COMPANY_THEMES.
+ *
+ * @param {{ customerName?: string, otp?: string, supportEmail?: string, theme: Object }} params
  */
-function buildFacelismVerificationCodeHtml({
+function buildBrandedOtpHtml({
   customerName = 'Customer',
   otp = '{{OTP}}',
-  supportEmail = 'info@facelism.com',
+  supportEmail = '',
+  theme,
 } = {}) {
-  const theme = getCompanyTheme('facelism');
-  const logoBlock = _logoHtml(theme, { forLightHeader: true });
+  const resolvedTheme = theme || getCompanyTheme('');
+  const logoBlock = _logoHtml(resolvedTheme, { forLightHeader: true });
+  const borderBottom =
+    resolvedTheme.customerEmailHeaderBorderBottom ||
+    `3px solid ${resolvedTheme.primaryColor}`;
 
   const header = `
-    <div style="background:${theme.customerEmailHeaderBg || '#ffffff'};padding:24px 24px 18px;text-align:center;border-bottom:${theme.customerEmailHeaderBorderBottom || `3px solid ${theme.accentColor}`};">
+    <div style="background:${resolvedTheme.customerEmailHeaderBg || '#ffffff'};padding:24px 24px 18px;text-align:center;border-bottom:${borderBottom};">
       ${logoBlock}
-      ${theme.tagline ? `<p style="margin:6px 0 0;color:${theme.customerEmailHeaderTaglineColor || '#6b7280'};font-size:13px;letter-spacing:0.1em;text-transform:uppercase;">${theme.tagline}</p>` : ''}
+      ${resolvedTheme.tagline ? `<p style="margin:6px 0 0;color:${resolvedTheme.customerEmailHeaderTaglineColor || '#6b7280'};font-size:13px;letter-spacing:0.1em;text-transform:uppercase;">${resolvedTheme.tagline}</p>` : ''}
     </div>`;
 
+  const supportLine = supportEmail
+    ? `<p style="margin:18px 0 6px;text-align:center;font-size:12px;color:#6b7280;">
+        Need help? Contact us at <a href="mailto:${supportEmail}" style="color:${resolvedTheme.primaryColor};text-decoration:none;">${supportEmail}</a>
+       </p>`
+    : '';
+
   const body = `
-    <div style="padding:28px 28px 8px;font-family:${theme.bodyFontFamily};color:#1f2937;line-height:1.6;">
-      <h1 style="text-align:center;margin:0 0 16px;font-family:${theme.fontFamily};font-size:30px;color:#111827;">Verify Your Account</h1>
+    <div style="padding:28px 28px 8px;font-family:${resolvedTheme.bodyFontFamily};color:#1f2937;line-height:1.6;">
+      <h1 style="text-align:center;margin:0 0 16px;font-family:${resolvedTheme.fontFamily};font-size:30px;color:#111827;">Verify Your Identity</h1>
       <p style="text-align:center;color:#4b5563;font-size:16px;margin:0 0 22px;">
         Hello ${customerName},<br/>
-        Please use the verification code below to complete your account setup.
+        Please use the verification code below to confirm your details with <strong>${resolvedTheme.companyName}</strong>.
       </p>
       <div style="text-align:center;margin:14px 0 18px;">
         <p style="margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:0.12em;color:#6b7280;">Verification Code</p>
-        <div style="display:inline-block;background:#f3f4f6;border:2px solid ${theme.primaryColor};color:${theme.primaryColor};font-size:34px;font-weight:700;letter-spacing:10px;font-family:'Courier New',monospace;padding:14px 24px;border-radius:6px;">
+        <div style="display:inline-block;background:#f3f4f6;border:2px solid ${resolvedTheme.primaryColor};color:${resolvedTheme.primaryColor};font-size:34px;font-weight:700;letter-spacing:10px;font-family:'Courier New',monospace;padding:14px 24px;border-radius:${resolvedTheme.borderRadius};">
           ${otp}
         </div>
       </div>
-      <div style="margin:20px auto 0;max-width:520px;background:#f8f2e8;border:1px solid #d9b98a;padding:12px 14px;border-radius:4px;text-align:center;">
-        <span style="color:#7a4f22;font-size:14px;font-weight:600;">This code will expire in 10 minutes</span>
+      <div style="margin:20px auto 0;max-width:520px;background:#f9f9f9;border:1px solid ${resolvedTheme.dividerColor};padding:12px 14px;border-radius:4px;text-align:center;">
+        <span style="color:${resolvedTheme.primaryColor};font-size:14px;font-weight:600;">This code will expire in 10 minutes</span>
       </div>
-      <div style="margin:18px auto 0;max-width:520px;background:#faf9f7;border-left:3px solid ${theme.primaryColor};padding:12px 14px;border-radius:0 4px 4px 0;">
-        <p style="margin:0 0 8px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:${theme.primaryColor};">Important Security Information</p>
+      <div style="margin:18px auto 0;max-width:520px;background:#fafafa;border-left:3px solid ${resolvedTheme.primaryColor};padding:12px 14px;border-radius:0 4px 4px 0;">
+        <p style="margin:0 0 8px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:${resolvedTheme.primaryColor};">Important Security Information</p>
         <p style="margin:0;color:#374151;font-size:13px;line-height:1.7;">
           • Never share this code with anyone<br/>
           • Our team will never ask for your verification code<br/>
           • If you did not request this code, please ignore this email
         </p>
       </div>
-      <p style="margin:18px 0 6px;text-align:center;font-size:12px;color:#6b7280;">
-        Need help? Contact us at ${supportEmail}
-      </p>
+      ${supportLine}
     </div>`;
 
-  return _wrapEmail(header, body, theme);
+  return _wrapEmail(header, body, resolvedTheme);
 }
 
 function _wrapEmail(header, body, theme) {
@@ -421,8 +487,8 @@ function _wrapEmail(header, body, theme) {
 
 module.exports = {
   getCompanyTheme,
+  buildBrandedOtpHtml,
   buildCustomerConfirmationHtml,
   buildBusinessNotificationHtml,
-  buildFacelismVerificationCodeHtml,
   resolveFrontendAssetUrl,
 };

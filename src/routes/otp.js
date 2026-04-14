@@ -10,7 +10,6 @@ const { Integration } = require('../models/Integration');
 const { App } = require('../models/App');
 const crypto = require('crypto');
 
-const normalizeBrand = (value) => String(value || '').trim().toLowerCase();
 
 class OtpController {
   constructor() {
@@ -39,7 +38,7 @@ class OtpController {
   async sendEmailOtp(req, res, next) {
     try {
       const { id: userId } = req.params;
-      const { email, htmlTemplate, branding, supportEmail, companyName, appId, customerName } = req.body;
+      const { email, htmlTemplate, supportEmail, companyName, appId, customerName } = req.body;
 
       // Validate request body
       const { error } = sendEmailOtpValidationSchema.validate({ email });
@@ -74,47 +73,51 @@ class OtpController {
 
       await otpRecord.save();
 
-      // Send email
-      const resolvedCustomerName = String(customerName || '').trim();
-      const emailData = {
-        email,
-        firstName: resolvedCustomerName || 'Customer',
-        otp
-      };
-
-      let resolvedBranding = branding;
-      let resolvedCompanyName = companyName;
+      // Resolve brand config from the app's Integration record (same pattern as calendar.js).
+      // Request-body values are accepted only as a last resort (no appId provided).
       const trimmedAppId = String(appId || '').trim();
+      let resolvedCompanyName = String(companyName || '').trim();
+      let resolvedPrimaryColor = '';
+      let resolvedLogoUrl = '';
+      let resolvedSupportEmail = String(supportEmail || '').trim();
 
-      // Prefer explicit request branding/company; otherwise resolve from appId.
-      if ((!resolvedBranding || !resolvedCompanyName) && trimmedAppId) {
+      if (trimmedAppId) {
         try {
-          const integration = await Integration.findOne({ owner: trimmedAppId })
-            .select('companyName')
-            .lean();
-          const app = await App.findById(trimmedAppId).select('name').lean();
-          const dbCompanyName = String(integration?.companyName || app?.name || '').trim();
-          if (!resolvedCompanyName && dbCompanyName) {
-            resolvedCompanyName = dbCompanyName;
-          }
-          if (!resolvedBranding && normalizeBrand(dbCompanyName)) {
-            resolvedBranding = dbCompanyName;
-          }
+          const [integration, app] = await Promise.all([
+            Integration.findOne({ owner: trimmedAppId })
+              .select('companyName primaryColor chatbotImage')
+              .lean(),
+            App.findById(trimmedAppId).select('name').lean(),
+          ]);
+
+          resolvedCompanyName =
+            integration?.companyName || app?.name || resolvedCompanyName || '';
+          resolvedPrimaryColor = integration?.primaryColor || '';
+          resolvedLogoUrl = integration?.chatbotImage?.filename
+            ? `${process.env.NEXT_PUBLIC_API_URL || ''}/api/v1/integration/public/apps/${trimmedAppId}/chatbot-image`
+            : '';
         } catch (resolveError) {
-          logger.warn('Failed to resolve OTP branding from appId', {
+          logger.warn('Failed to resolve OTP brand config from appId', {
             appId: trimmedAppId,
             error: resolveError.message,
           });
         }
       }
 
+      const resolvedCustomerName = String(customerName || '').trim();
+      const emailData = {
+        email,
+        firstName: resolvedCustomerName || 'Customer',
+        otp,
+      };
+
       const templateData = {
         htmlTemplate,
-        textContent: `Your verification code is: ${otp}. This code will expire in 10 minutes.`,
-        branding: resolvedBranding,
-        supportEmail,
-        companyName: resolvedCompanyName,
         appId: trimmedAppId || undefined,
+        companyName: resolvedCompanyName,
+        primaryColor: resolvedPrimaryColor,
+        logoUrl: resolvedLogoUrl,
+        supportEmail: resolvedSupportEmail,
       };
 
       await this.emailService.sendOtpEmail(emailData, templateData);
