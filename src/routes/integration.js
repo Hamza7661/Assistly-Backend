@@ -412,6 +412,7 @@ class IntegrationController {
               data: null
             },
             assistantName: integration.assistantName,
+            companyName: integration.companyName,
             greeting: integration.greeting,
             primaryColor: integration.primaryColor,
             chatbotUiMode: integration.chatbotUiMode || 'basic',
