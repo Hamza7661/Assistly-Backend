@@ -9,7 +9,7 @@ const { verifySignedThirdPartyForParamUser } = require('../middleware/thirdParty
 const SeedDataService = require('../services/seedDataService');
 const { LEAD_TYPES_LIST } = require('../enums/leadTypes');
 const cacheManager = require('../utils/cache');
-const { Integration } = require('../models/Integration');
+const { Integration, getConnectedCalendarTimezone } = require('../models/Integration');
 const { Questionnaire, QUESTIONNAIRE_TYPES } = require('../models/Questionnaire');
 const { QuestionType } = require('../models/QuestionType');
 const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
@@ -1630,7 +1630,7 @@ class AppController {
         outlookCalendarConnected: !!integration.outlookCalendarConnected,
         calendlyConnected: !!integration.calendlyConnected,
         calendarSlotMinutes: integration.calendarSlotMinutes ?? 30,
-        calendarTimezone: integration.googleCalendarTimezone || null,
+        calendarTimezone: getConnectedCalendarTimezone(integration),
         leadTypeMessages: integration.leadTypeMessages || []
       } : {
         ...getDefaultIntegrationConfig(),
@@ -1869,7 +1869,7 @@ class AppController {
         outlookCalendarConnected: !!integration.outlookCalendarConnected,
         calendlyConnected: !!integration.calendlyConnected,
         calendarSlotMinutes: integration.calendarSlotMinutes ?? 30,
-        calendarTimezone: integration.googleCalendarTimezone || null,
+        calendarTimezone: getConnectedCalendarTimezone(integration),
         leadTypeMessages: integration.leadTypeMessages || []
       } : {
         ...getDefaultIntegrationConfig(),

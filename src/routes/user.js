@@ -6,7 +6,7 @@ const { AppError } = require('../utils/errorHandler');
 const { Questionnaire, QUESTIONNAIRE_TYPES } = require('../models/Questionnaire');
 const { QuestionType } = require('../models/QuestionType');
 const { LEAD_TYPES_LIST } = require('../enums/leadTypes');
-const { Integration } = require('../models/Integration');
+const { Integration, getConnectedCalendarTimezone } = require('../models/Integration');
 const { App } = require('../models/App');
 const cacheManager = require('../utils/cache');
 const { authenticateToken, requireAdmin, requireUserOrAdmin } = require('../middleware/auth');
@@ -658,7 +658,7 @@ class UserController {
         googleReviewUrl: integration.googleReviewUrl || null,
         calendarConnected: !!integration.googleCalendarConnected,
         calendarSlotMinutes: integration.calendarSlotMinutes ?? 30,
-        calendarTimezone: integration.googleCalendarTimezone || null,
+        calendarTimezone: getConnectedCalendarTimezone(integration),
         leadTypeMessages: integration.leadTypeMessages || []
       } : {
         assistantName: 'Assistant',
@@ -975,7 +975,7 @@ class UserController {
         googleReviewUrl: integration.googleReviewUrl || null,
         calendarConnected: !!integration.googleCalendarConnected,
         calendarSlotMinutes: integration.calendarSlotMinutes ?? 30,
-        calendarTimezone: integration.googleCalendarTimezone || null,
+        calendarTimezone: getConnectedCalendarTimezone(integration),
         leadTypeMessages: integration.leadTypeMessages || []
       } : {
         assistantName: 'Assistant',
