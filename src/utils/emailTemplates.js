@@ -426,10 +426,11 @@ function buildBrandedOtpHtml({
   theme,
 } = {}) {
   const resolvedTheme = theme || getCompanyTheme('');
+  const primaryColor = resolvedTheme.primaryColor || DEFAULT_THEME.primaryColor;
   const logoBlock = _logoHtml(resolvedTheme, { forLightHeader: true });
   const borderBottom =
     resolvedTheme.customerEmailHeaderBorderBottom ||
-    `3px solid ${resolvedTheme.primaryColor}`;
+    `3px solid ${primaryColor}`;
 
   const header = `
     <div style="background:${resolvedTheme.customerEmailHeaderBg || '#ffffff'};padding:24px 24px 18px;text-align:center;border-bottom:${borderBottom};">
@@ -439,7 +440,7 @@ function buildBrandedOtpHtml({
 
   const supportLine = supportEmail
     ? `<p style="margin:18px 0 6px;text-align:center;font-size:12px;color:#6b7280;">
-        Need help? Contact us at <a href="mailto:${supportEmail}" style="color:${resolvedTheme.primaryColor};text-decoration:none;">${supportEmail}</a>
+        Need help? Contact us at <a href="mailto:${supportEmail}" style="color:${primaryColor};text-decoration:none;">${supportEmail}</a>
        </p>`
     : '';
 
@@ -452,15 +453,15 @@ function buildBrandedOtpHtml({
       </p>
       <div style="text-align:center;margin:14px 0 18px;">
         <p style="margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:0.12em;color:#6b7280;">Verification Code</p>
-        <div style="display:inline-block;background:#f3f4f6;border:2px solid ${resolvedTheme.primaryColor};color:${resolvedTheme.primaryColor};font-size:34px;font-weight:700;letter-spacing:10px;font-family:'Courier New',monospace;padding:14px 24px;border-radius:${resolvedTheme.borderRadius};">
+        <div style="display:inline-block;background:#f3f4f6;border:2px solid ${primaryColor};color:${primaryColor};font-size:34px;font-weight:700;letter-spacing:10px;font-family:'Courier New',monospace;padding:14px 24px;border-radius:${resolvedTheme.borderRadius};">
           ${otp}
         </div>
       </div>
-      <div style="margin:20px auto 0;max-width:520px;background:#f9f9f9;border:1px solid ${resolvedTheme.dividerColor};padding:12px 14px;border-radius:4px;text-align:center;">
-        <span style="color:${resolvedTheme.primaryColor};font-size:14px;font-weight:600;">This code will expire in 10 minutes</span>
+      <div style="margin:20px auto 0;max-width:520px;background:#fff6f6;border:1px solid ${primaryColor};padding:12px 14px;border-radius:4px;text-align:center;">
+        <span style="color:${primaryColor};font-size:14px;font-weight:600;">This code will expire in 10 minutes</span>
       </div>
-      <div style="margin:18px auto 0;max-width:520px;background:#fafafa;border-left:3px solid ${resolvedTheme.primaryColor};padding:12px 14px;border-radius:0 4px 4px 0;">
-        <p style="margin:0 0 8px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:${resolvedTheme.primaryColor};">Important Security Information</p>
+      <div style="margin:18px auto 0;max-width:520px;background:#fafafa;border-left:3px solid ${primaryColor};padding:12px 14px;border-radius:0 4px 4px 0;">
+        <p style="margin:0 0 8px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:${primaryColor};">Important Security Information</p>
         <p style="margin:0;color:#374151;font-size:13px;line-height:1.7;">
           • Never share this code with anyone<br/>
           • Our team will never ask for your verification code<br/>
