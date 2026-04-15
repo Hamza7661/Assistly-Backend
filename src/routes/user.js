@@ -169,7 +169,7 @@ class UserController {
 
       const treatmentPromise = Questionnaire.find({ owner: id, type: QUESTIONNAIRE_TYPES.SERVICE_PLAN, isActive: true })
         .select('question answer postBookingNote attachedWorkflows')
-        .populate('attachedWorkflows.workflowId', 'title question questionTypeId choiceInputMode options isRoot order')
+        .populate('attachedWorkflows.workflowId', 'title question questionTypeId choiceInputMode options isRoot order askForBookingAtEnd')
         .sort({ updatedAt: -1 })
         .exec();
 
@@ -183,7 +183,7 @@ class UserController {
 
       const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
       const workflowPromise = ChatbotWorkflow.find({ owner: id })
-        .select('title question questionTypeId choiceInputMode options attachment.hasFile attachment.filename attachment.contentType isRoot order workflowGroupId isActive')
+        .select('title question questionTypeId choiceInputMode options attachment.hasFile attachment.filename attachment.contentType isRoot order workflowGroupId isActive askForBookingAtEnd')
         .sort({ order: 1, createdAt: 1 })
         .exec();
 
@@ -220,7 +220,8 @@ class UserController {
               choiceInputMode: aw.workflowId.choiceInputMode || 'button',
               options: aw.workflowId.options || [],
               isRoot: aw.workflowId.isRoot,
-              order: aw.workflowId.order
+              order: aw.workflowId.order,
+              askForBookingAtEnd: aw.workflowId.askForBookingAtEnd !== false
             } : null
           }))
       }));
@@ -247,7 +248,8 @@ class UserController {
           isRoot: w.isRoot,
           order: w.order,
           workflowGroupId: w.workflowGroupId,
-          isActive: w.isActive
+          isActive: w.isActive,
+          askForBookingAtEnd: w.askForBookingAtEnd !== false
         };
         
         if (w.isRoot || !w.workflowGroupId) {
@@ -290,6 +292,7 @@ class UserController {
                 order: rootWorkflow.order,
                 workflowGroupId: rootWorkflow.workflowGroupId,
                 isActive: rootWorkflow.isActive,
+                askForBookingAtEnd: rootWorkflow.askForBookingAtEnd !== false,
                 questions: []
               };
               rootWorkflows.push(workflowMap[groupId]);
@@ -458,7 +461,7 @@ class UserController {
 
       const treatmentPromise = Questionnaire.find({ owner: appId, type: QUESTIONNAIRE_TYPES.SERVICE_PLAN, isActive: true })
         .select('question answer postBookingNote attachedWorkflows')
-        .populate('attachedWorkflows.workflowId', 'title question questionTypeId choiceInputMode options isRoot order')
+        .populate('attachedWorkflows.workflowId', 'title question questionTypeId choiceInputMode options isRoot order askForBookingAtEnd')
         .sort({ updatedAt: -1 })
         .exec();
 
@@ -479,7 +482,7 @@ class UserController {
 
       const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
       const workflowPromise = ChatbotWorkflow.find({ owner: appId })
-        .select('title question questionTypeId choiceInputMode options attachment.hasFile attachment.filename attachment.contentType isRoot order workflowGroupId isActive')
+        .select('title question questionTypeId choiceInputMode options attachment.hasFile attachment.filename attachment.contentType isRoot order workflowGroupId isActive askForBookingAtEnd')
         .sort({ order: 1, createdAt: 1 })
         .exec();
 
@@ -511,7 +514,8 @@ class UserController {
               choiceInputMode: aw.workflowId.choiceInputMode || 'button',
               options: aw.workflowId.options || [],
               isRoot: aw.workflowId.isRoot,
-              order: aw.workflowId.order
+              order: aw.workflowId.order,
+              askForBookingAtEnd: aw.workflowId.askForBookingAtEnd !== false
             } : null
           }))
       }));
@@ -537,7 +541,8 @@ class UserController {
           isRoot: w.isRoot,
           order: w.order,
           workflowGroupId: w.workflowGroupId,
-          isActive: w.isActive
+          isActive: w.isActive,
+          askForBookingAtEnd: w.askForBookingAtEnd !== false
         };
 
         if (w.isRoot || !w.workflowGroupId) {
@@ -577,6 +582,7 @@ class UserController {
                 order: rootWorkflow.order,
                 workflowGroupId: rootWorkflow.workflowGroupId,
                 isActive: rootWorkflow.isActive,
+                askForBookingAtEnd: rootWorkflow.askForBookingAtEnd !== false,
                 questions: []
               };
               rootWorkflows.push(workflowMap[groupId]);
@@ -752,7 +758,7 @@ class UserController {
       
       const treatmentPromise = Questionnaire.find({ owner: appId, type: QUESTIONNAIRE_TYPES.SERVICE_PLAN, isActive: true })
         .select('question answer postBookingNote attachedWorkflows')
-        .populate('attachedWorkflows.workflowId', 'title question questionTypeId choiceInputMode options isRoot order')
+        .populate('attachedWorkflows.workflowId', 'title question questionTypeId choiceInputMode options isRoot order askForBookingAtEnd')
         .sort({ updatedAt: -1 })
         .exec();
 
@@ -773,7 +779,7 @@ class UserController {
 
       const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
       const workflowPromise = ChatbotWorkflow.find({ owner: appId })
-        .select('title question questionTypeId choiceInputMode options attachment.hasFile attachment.filename attachment.contentType isRoot order workflowGroupId isActive')
+        .select('title question questionTypeId choiceInputMode options attachment.hasFile attachment.filename attachment.contentType isRoot order workflowGroupId isActive askForBookingAtEnd')
         .sort({ order: 1, createdAt: 1 })
         .exec();
 
@@ -806,7 +812,8 @@ class UserController {
               choiceInputMode: aw.workflowId.choiceInputMode || 'button',
               options: aw.workflowId.options || [],
               isRoot: aw.workflowId.isRoot,
-              order: aw.workflowId.order
+              order: aw.workflowId.order,
+              askForBookingAtEnd: aw.workflowId.askForBookingAtEnd !== false
             } : null
           }))
       }));
@@ -833,7 +840,8 @@ class UserController {
           isRoot: w.isRoot,
           order: w.order,
           workflowGroupId: w.workflowGroupId,
-          isActive: w.isActive
+          isActive: w.isActive,
+          askForBookingAtEnd: w.askForBookingAtEnd !== false
         };
         
         if (w.isRoot || !w.workflowGroupId) {
@@ -876,6 +884,7 @@ class UserController {
                 order: rootWorkflow.order,
                 workflowGroupId: rootWorkflow.workflowGroupId,
                 isActive: rootWorkflow.isActive,
+                askForBookingAtEnd: rootWorkflow.askForBookingAtEnd !== false,
                 questions: []
               };
               rootWorkflows.push(workflowMap[groupId]);
