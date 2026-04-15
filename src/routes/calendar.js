@@ -1,7 +1,7 @@
 const express = require('express');
 const { AppError } = require('../utils/errorHandler');
 const { verifySignedThirdPartyForParamUser } = require('../middleware/thirdParty');
-const { Integration } = require('../models/Integration');
+const { Integration, getConnectedCalendarTimezone } = require('../models/Integration');
 const { Availability } = require('../models/Availability');
 const { AvailabilityException } = require('../models/AvailabilityException');
 const { App } = require('../models/App');
@@ -22,7 +22,7 @@ const router = express.Router();
 async function getProviderForApp(appId) {
   const integration = await Integration.findOne({ owner: appId })
     .select(
-      'googleCalendarConnected outlookCalendarConnected calendlyConnected calendarProvider googleCalendarRefreshToken googleCalendarCalendarId outlookCalendarRefreshToken outlookCalendarCalendarId calendarSlotMinutes googleCalendarTimezone'
+      'googleCalendarConnected outlookCalendarConnected calendlyConnected calendarProvider googleCalendarRefreshToken googleCalendarCalendarId outlookCalendarRefreshToken outlookCalendarCalendarId calendarSlotMinutes connectedCalendarTimezone googleCalendarTimezone'
     )
     .lean()
     .exec();
@@ -127,7 +127,7 @@ router.get('/apps/:appId/availability', verifySignedThirdPartyForParamUser, asyn
       baseViewModel = availabilityNotConnectedOrError({ message: 'No calendar connected for this app.' });
     }
 
-    const calendarTimezone = integration?.googleCalendarTimezone || null;
+    const calendarTimezone = getConnectedCalendarTimezone(integration);
 
     const freeSlots = generateSlotsFromRules({
       timeMin,
@@ -198,7 +198,7 @@ router.post('/apps/:appId/appointments', verifySignedThirdPartyForParamUser, asy
           ? await User.findById(app.owner).select('email firstName lastName phoneNumber').lean().exec()
           : null;
         const integration = await Integration.findOne({ owner: appId })
-          .select('assistantName companyName primaryColor chatbotImage googleCalendarTimezone')
+          .select('assistantName companyName primaryColor chatbotImage connectedCalendarTimezone googleCalendarTimezone')
           .lean()
           .exec();
         const emailService = new EmailService();
@@ -217,7 +217,7 @@ router.post('/apps/:appId/appointments', verifySignedThirdPartyForParamUser, asy
           primaryColor: integration?.primaryColor || '#c01721',
           logoUrl,
         };
-        const calTz = integration?.googleCalendarTimezone || 'UTC';
+        const calTz = getConnectedCalendarTimezone(integration) || 'UTC';
         const formatInCalTz = (isoStr) => {
           try {
             return new Date(isoStr).toLocaleString('en-US', {
