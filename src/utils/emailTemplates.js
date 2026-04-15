@@ -453,11 +453,11 @@ function buildBrandedOtpHtml({
       </p>
       <div style="text-align:center;margin:14px 0 18px;">
         <p style="margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:0.12em;color:#6b7280;">Verification Code</p>
-        <div style="display:inline-block;background:#f3f4f6;border:2px solid ${primaryColor};color:${primaryColor};font-size:34px;font-weight:700;letter-spacing:10px;font-family:'Courier New',monospace;padding:14px 24px;border-radius:${resolvedTheme.borderRadius};">
+        <div style="display:inline-block;background:#f3f4f6;background-image:linear-gradient(#f3f4f6,#f3f4f6);border:2px solid ${primaryColor};color:${primaryColor};font-size:34px;font-weight:700;letter-spacing:10px;font-family:'Courier New',monospace;padding:14px 24px;border-radius:${resolvedTheme.borderRadius};">
           ${otp}
         </div>
       </div>
-      <div style="margin:20px auto 0;max-width:520px;background:#fff6f6;border:1px solid ${primaryColor};padding:12px 14px;border-radius:4px;text-align:center;">
+      <div style="margin:20px auto 0;max-width:520px;background:#fff6f6;background-image:linear-gradient(#fff6f6,#fff6f6);border:1px solid ${primaryColor};padding:12px 14px;border-radius:4px;text-align:center;">
         <span style="color:${primaryColor};font-size:14px;font-weight:600;">This code will expire in 10 minutes</span>
       </div>
       <div style="margin:18px auto 0;max-width:520px;background:#fafafa;border-left:3px solid ${primaryColor};padding:12px 14px;border-radius:0 4px 4px 0;">
@@ -477,9 +477,15 @@ function buildBrandedOtpHtml({
 function _wrapEmail(header, body, theme) {
   return `<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Appointment</title></head>
-<body style="margin:0;padding:0;background:#f3f4f6;">
-  <div style="max-width:640px;margin:32px auto;background:#ffffff;border-radius:${theme.borderRadius};overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.10);">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+<title>Appointment</title>
+</head>
+<body style="margin:0;padding:0;background:#f3f4f6;background-image:linear-gradient(#f3f4f6,#f3f4f6);">
+  <div style="max-width:640px;margin:32px auto;background:#ffffff;background-image:linear-gradient(#ffffff,#ffffff);border-radius:${theme.borderRadius};overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.10);">
     ${header}
     ${body}
     ${_footer(theme)}
