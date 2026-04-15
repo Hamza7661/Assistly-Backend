@@ -157,7 +157,19 @@ const integrationSchema = new mongoose.Schema({
     trim: true,
     maxlength: 255
   },
-  /** IANA timezone of the connected Google Calendar (e.g. 'Asia/Karachi'). Fetched at connect time. */
+  /**
+   * IANA timezone from the user's browser when they connect a calendar (Google, Outlook, Calendly, etc.).
+   * Passed through OAuth state at connect time.
+   */
+  connectedCalendarTimezone: {
+    type: String,
+    default: null,
+    trim: true,
+    maxlength: 100
+  },
+  /**
+   * @deprecated Legacy field; use connectedCalendarTimezone. Still read for older documents.
+   */
   googleCalendarTimezone: {
     type: String,
     default: null,
@@ -331,8 +343,18 @@ const integrationUpdateValidationSchema = Joi.object({
 
 const Integration = mongoose.model('Integration', integrationSchema);
 
+/** Prefer connectedCalendarTimezone; fall back to legacy googleCalendarTimezone. */
+function getConnectedCalendarTimezone(integration) {
+  if (!integration) return null;
+  const v = integration.connectedCalendarTimezone || integration.googleCalendarTimezone;
+  if (v == null || v === '') return null;
+  const s = String(v).trim();
+  return s || null;
+}
+
 module.exports = {
   Integration,
   integrationValidationSchema,
-  integrationUpdateValidationSchema
+  integrationUpdateValidationSchema,
+  getConnectedCalendarTimezone
 };
