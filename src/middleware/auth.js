@@ -89,6 +89,8 @@ const requireRole = (roles) => {
 
 // Admin only access
 const requireAdmin = requireRole(['admin']);
+const requireAdminOrSuperAdmin = requireRole(['admin', 'super_admin']);
+const requireSuperAdmin = requireRole(['super_admin']);
 
 // User or admin access
 const requireUserOrAdmin = requireRole(['user', 'admin']);
@@ -98,5 +100,7 @@ module.exports = {
   optionalAuth,
   requireRole,
   requireAdmin,
-  requireUserOrAdmin
+  requireUserOrAdmin,
+  requireAdminOrSuperAdmin,
+  requireSuperAdmin
 };

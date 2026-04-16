@@ -8,6 +8,7 @@ const { QuestionType } = require('../models/QuestionType');
 const { LEAD_TYPES_LIST } = require('../enums/leadTypes');
 const { Integration } = require('../models/Integration');
 const { App } = require('../models/App');
+const { AppSubscriptionStateService } = require('../services/appSubscriptionStateService');
 const cacheManager = require('../utils/cache');
 const { authenticateToken, requireAdmin, requireUserOrAdmin } = require('../middleware/auth');
 const { verifySignedThirdPartyForParamUser } = require('../middleware/thirdParty');
@@ -376,6 +377,8 @@ class UserController {
       
       const workflows = rootWorkflows;
 
+      const subscriptionSummary = null;
+
       // Prepare integration data
       const integrationData = integration ? {
         assistantName: integration.assistantName,
@@ -389,7 +392,9 @@ class UserController {
         conversationStyle: integration.conversationStyle || false,
         captureFeedbackEnabled: !!integration.captureFeedbackEnabled,
         googleReviewEnabled: !!integration.googleReviewEnabled,
-        googleReviewUrl: integration.googleReviewUrl || null
+        googleReviewUrl: integration.googleReviewUrl || null,
+        subscriptionState: subscriptionSummary,
+        smsVerificationAddonEnabled: !!subscriptionSummary?.addons?.smsVerification?.enabled
       } : {
         assistantName: 'Assistant',
         companyName: '',
@@ -402,7 +407,9 @@ class UserController {
         conversationStyle: false,
         captureFeedbackEnabled: false,
         googleReviewEnabled: false,
-        googleReviewUrl: null
+        googleReviewUrl: null,
+        subscriptionState: subscriptionSummary,
+        smsVerificationAddonEnabled: false
       };
 
       const responseData = {
@@ -649,6 +656,9 @@ class UserController {
 
       const workflows = rootWorkflows;
 
+      const subscriptionState = await AppSubscriptionStateService.ensureStateForApp(app._id);
+      const subscriptionSummary = AppSubscriptionStateService.summarize(subscriptionState);
+
       const integrationData = integration ? {
         assistantName: integration.assistantName,
         companyName: integration.companyName || '',
@@ -665,7 +675,9 @@ class UserController {
         calendarConnected: !!integration.googleCalendarConnected,
         calendarSlotMinutes: integration.calendarSlotMinutes ?? 30,
         calendarTimezone: integration.googleCalendarTimezone || null,
-        leadTypeMessages: integration.leadTypeMessages || []
+        leadTypeMessages: integration.leadTypeMessages || [],
+        subscriptionState: subscriptionSummary,
+        smsVerificationAddonEnabled: !!subscriptionSummary?.addons?.smsVerification?.enabled
       } : {
         assistantName: 'Assistant',
         companyName: '',
@@ -682,7 +694,9 @@ class UserController {
         calendarConnected: false,
         calendarSlotMinutes: 30,
         calendarTimezone: null,
-        leadTypeMessages: []
+        leadTypeMessages: [],
+        subscriptionState: subscriptionSummary,
+        smsVerificationAddonEnabled: !!subscriptionSummary?.addons?.smsVerification?.enabled
       };
 
       const responseData = {
@@ -968,6 +982,9 @@ class UserController {
       
       const workflows = rootWorkflows;
 
+      const subscriptionState = await AppSubscriptionStateService.ensureStateForApp(appId);
+      const subscriptionSummary = AppSubscriptionStateService.summarize(subscriptionState);
+
       // Prepare integration data
       const integrationData = integration ? {
         assistantName: integration.assistantName,
@@ -985,7 +1002,9 @@ class UserController {
         calendarConnected: !!integration.googleCalendarConnected,
         calendarSlotMinutes: integration.calendarSlotMinutes ?? 30,
         calendarTimezone: integration.googleCalendarTimezone || null,
-        leadTypeMessages: integration.leadTypeMessages || []
+        leadTypeMessages: integration.leadTypeMessages || [],
+        subscriptionState: subscriptionSummary,
+        smsVerificationAddonEnabled: !!subscriptionSummary?.addons?.smsVerification?.enabled
       } : {
         assistantName: 'Assistant',
         companyName: '',
@@ -1002,7 +1021,9 @@ class UserController {
         calendarConnected: false,
         calendarSlotMinutes: 30,
         calendarTimezone: null,
-        leadTypeMessages: []
+        leadTypeMessages: [],
+        subscriptionState: subscriptionSummary,
+        smsVerificationAddonEnabled: !!subscriptionSummary?.addons?.smsVerification?.enabled
       };
 
       const responseData = {

@@ -4,7 +4,7 @@ const { App, appValidationSchema, appUpdateValidationSchema } = require('../mode
 const { User } = require('../models/User');
 const { logger } = require('../utils/logger');
 const { AppError } = require('../utils/errorHandler');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, requireSuperAdmin } = require('../middleware/auth');
 const { verifySignedThirdPartyForParamUser } = require('../middleware/thirdParty');
 const SeedDataService = require('../services/seedDataService');
 const { LEAD_TYPES_LIST } = require('../enums/leadTypes');
@@ -13,6 +13,7 @@ const { Integration } = require('../models/Integration');
 const { Questionnaire, QUESTIONNAIRE_TYPES } = require('../models/Questionnaire');
 const { QuestionType } = require('../models/QuestionType');
 const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
+const { AppSubscriptionStateService } = require('../services/appSubscriptionStateService');
 const { getTwilioPhoneService, createTwilioPhoneServiceForAccount } = require('../services/twilioPhoneService');
 const { getWhatsAppSenderService, createWhatsAppSenderServiceForAccount } = require('../services/whatsappSenderService');
 const { createTwilioSubaccount } = require('../services/twilioSubaccountService');
@@ -551,6 +552,48 @@ class AppController {
 
     } catch (error) {
       next(new AppError('Failed to retrieve apps', 500));
+    }
+  }
+
+  async getAllApps(req, res, next) {
+    try {
+      const { includeInactive } = req.query;
+      const query = {};
+
+      if (includeInactive !== 'true') {
+        query.isActive = true;
+        query.$or = [
+          { deletedAt: null },
+          { deletedAt: { $exists: false } }
+        ];
+      }
+
+      const apps = await App.find(query)
+        .sort({ createdAt: -1 })
+        .select('-__v');
+
+      res.status(200).json({
+        status: 'success',
+        data: {
+          apps: apps.map(app => ({
+            id: app._id,
+            name: app.name,
+            industry: app.industry,
+            description: app.description,
+            owner: app.owner,
+            whatsappNumber: app.whatsappNumber,
+            whatsappNumberSource: app.whatsappNumberSource,
+            whatsappNumberStatus: app.whatsappNumberStatus,
+            usesTwilioNumber: !!app.usesTwilioNumber,
+            isActive: app.isActive,
+            deletedAt: app.deletedAt || null,
+            createdAt: app.createdAt,
+            updatedAt: app.updatedAt
+          }))
+        }
+      });
+    } catch (error) {
+      next(new AppError('Failed to retrieve all apps', 500));
     }
   }
 
@@ -1618,6 +1661,9 @@ class AppController {
       
       const workflows = rootWorkflows;
 
+      const subscriptionState = await AppSubscriptionStateService.ensureStateForApp(appId);
+      const subscriptionSummary = AppSubscriptionStateService.summarize(subscriptionState);
+
       // Prepare integration data
       const integrationData = integration ? {
         assistantName: integration.assistantName,
@@ -1634,10 +1680,14 @@ class AppController {
         calendlyConnected: !!integration.calendlyConnected,
         calendarSlotMinutes: integration.calendarSlotMinutes ?? 30,
         calendarTimezone: integration.googleCalendarTimezone || null,
-        leadTypeMessages: integration.leadTypeMessages || []
+        leadTypeMessages: integration.leadTypeMessages || [],
+        subscriptionState: subscriptionSummary,
+        smsVerificationAddonEnabled: !!subscriptionSummary?.addons?.smsVerification?.enabled
       } : {
         ...getDefaultIntegrationConfig(),
-        leadTypeMessages: []
+        leadTypeMessages: [],
+        subscriptionState: subscriptionSummary,
+        smsVerificationAddonEnabled: !!subscriptionSummary?.addons?.smsVerification?.enabled
       };
 
       const responseData = {
@@ -1861,6 +1911,9 @@ class AppController {
         const bOrder = b.treatmentPlanOrder !== undefined ? b.treatmentPlanOrder : (b.order || 0);
         return aOrder !== bOrder ? aOrder - bOrder : (a.order || 0) - (b.order || 0);
       });
+      const subscriptionState = await AppSubscriptionStateService.ensureStateForApp(appId);
+      const subscriptionSummary = AppSubscriptionStateService.summarize(subscriptionState);
+
       const integrationData = integration ? {
         assistantName: integration.assistantName,
         companyName: integration.companyName || '',
@@ -1876,10 +1929,14 @@ class AppController {
         calendlyConnected: !!integration.calendlyConnected,
         calendarSlotMinutes: integration.calendarSlotMinutes ?? 30,
         calendarTimezone: integration.googleCalendarTimezone || null,
-        leadTypeMessages: integration.leadTypeMessages || []
+        leadTypeMessages: integration.leadTypeMessages || [],
+        subscriptionState: subscriptionSummary,
+        smsVerificationAddonEnabled: !!subscriptionSummary?.addons?.smsVerification?.enabled
       } : {
         ...getDefaultIntegrationConfig(),
-        leadTypeMessages: []
+        leadTypeMessages: [],
+        subscriptionState: subscriptionSummary,
+        smsVerificationAddonEnabled: !!subscriptionSummary?.addons?.smsVerification?.enabled
       };
       const responseData = {
         status: 'success',
@@ -2154,6 +2211,7 @@ router.post('/provision-number', authenticateToken, appController.provisionNumbe
 router.post('/register-sender-after-meta', authenticateToken, appController.registerSenderAfterMeta);
 router.post('/', authenticateToken, appController.createApp);
 router.get('/', authenticateToken, appController.getApps);
+router.get('/admin/all', authenticateToken, requireSuperAdmin, appController.getAllApps);
 router.get('/by-twilio/:twilioPhoneNumber/context', verifySignedThirdPartyForParamUser, appController.getAppContextByTwilioNumber);
 router.get('/by-social-sender/:socialSenderId/context', verifySignedThirdPartyForParamUser, appController.getAppContextBySocialSender);
 // More specific routes must come before generic :id routes

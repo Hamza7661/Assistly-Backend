@@ -211,7 +211,7 @@ router.post('/apps/:appId/appointments', verifySignedThirdPartyForParamUser, asy
           appId,
           companyName: resolvedCompanyName,
           name: resolvedCompanyName,
-          email: 'socialaliafzal@gmail.com',
+          email: owner?.email || '',
           // Prefer owner's user phone; fallback to app-level numbers.
           phone: owner?.phoneNumber || app?.twilioPhoneNumber || app?.whatsappNumber || '',
           primaryColor: integration?.primaryColor || '#c01721',
