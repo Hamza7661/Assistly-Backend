@@ -4,8 +4,12 @@ const { authenticateToken, requireUserOrAdmin } = require('../middleware/auth');
 const { verifySignedThirdPartyForParamUser } = require('../middleware/thirdParty');
 const { verifyAppOwnership } = require('../middleware/appOwnership');
 const { App } = require('../models/App');
+const { User } = require('../models/User');
+const { Integration } = require('../models/Integration');
 const { Lead, leadCreateSchema, leadQuerySchema, leadUpdateSchema } = require('../models/Lead');
 const { LeadReadState } = require('../models/LeadReadState');
+const EmailService = require('../utils/emailService');
+const { logger } = require('../utils/logger');
 const websocketServer = require('../utils/websocketServer');
 
 const router = express.Router();
@@ -60,6 +64,182 @@ function buildLeadBroadcastPayload(lead) {
   };
 }
 
+function hasQualifiedLeadData(lead) {
+  const hasLeadType = !!String(lead?.leadType || '').trim();
+  const hasPersonalInfo = !!(
+    String(lead?.leadName || '').trim() ||
+    String(lead?.leadEmail || '').trim() ||
+    String(lead?.leadPhoneNumber || '').trim()
+  );
+  return hasLeadType && hasPersonalInfo;
+}
+
+function hasCompletedWorkflowData(lead) {
+  const status = String(lead?.status || '').trim().toLowerCase();
+  const isCompleted = status === 'complete' || status === 'confirmed';
+  const hasHistory = Array.isArray(lead?.history) && lead.history.length > 0;
+  return isCompleted && hasHistory;
+}
+
+function getFrontendBaseUrl() {
+  return (process.env.FRONTEND_BASE_URL || process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
+}
+
+function prettifyChannel(sourceChannel) {
+  const raw = String(sourceChannel || '').trim();
+  if (!raw) return 'Chatbot';
+  return raw
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+async function resolveBusinessNotificationContext(lead) {
+  const appId = lead?.appId ? String(lead.appId) : '';
+  const ownerId = lead?.userId ? String(lead.userId) : '';
+  const [app, owner, integration] = await Promise.all([
+    appId ? App.findById(appId).select('_id owner name').lean() : null,
+    appId
+      ? App.findById(appId).select('owner').lean().then((appDoc) => {
+        if (!appDoc?.owner) return null;
+        return User.findById(appDoc.owner).select('email').lean();
+      })
+      : (ownerId ? User.findById(ownerId).select('email').lean() : null),
+    appId ? Integration.findOne({ owner: appId }).select('companyName primaryColor chatbotImage').lean() : null
+  ]);
+
+  const companyName = integration?.companyName || app?.name || 'Business';
+  const logoUrl = integration?.chatbotImage?.filename
+    ? `${getFrontendBaseUrl()}/uploads/chatbots/${integration.chatbotImage.filename}`
+    : '';
+
+  return {
+    businessData: {
+      appId,
+      companyName,
+      primaryColor: integration?.primaryColor || undefined,
+      email: owner?.email || '',
+      logoUrl,
+    },
+    appId,
+  };
+}
+
+async function maybeSendQualifiedLeadEmail(lead) {
+  if (!lead || !hasQualifiedLeadData(lead)) return;
+  if (lead?.notifications?.qualifiedLeadEmailSentAt) return;
+
+  try {
+    const { businessData, appId } = await resolveBusinessNotificationContext(lead);
+    if (!businessData.email) return;
+
+    const emailService = new EmailService();
+    const createdAt = lead.updatedAt || lead.createdAt || new Date();
+    const viewLeadUrl = `${getFrontendBaseUrl()}/leads?${new URLSearchParams({
+      ...(appId ? { appId } : {}),
+      leadId: String(lead._id),
+    }).toString()}`;
+
+    await emailService.sendQualifiedLeadNotificationEmail(businessData, {
+      leadType: String(lead.leadType || '').trim() || 'General enquiry',
+      sourceChannel: prettifyChannel(lead.sourceChannel),
+      customerName: String(lead.leadName || '').trim() || 'Not provided',
+      customerEmail: String(lead.leadEmail || '').trim() || 'Not provided',
+      customerPhone: String(lead.leadPhoneNumber || '').trim() || 'Not provided',
+      initialInteraction: String(lead.initialInteraction || '').trim() || 'Widget opened',
+      clickedItems: Array.isArray(lead.clickedItems) ? lead.clickedItems.filter(Boolean) : [],
+      createdAtText: new Date(createdAt).toLocaleString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      }),
+      viewLeadUrl,
+    });
+
+    lead.notifications = {
+      ...(lead.notifications || {}),
+      qualifiedLeadEmailSentAt: new Date(),
+      qualifiedLeadEmailStatus: 'sent',
+    };
+    await lead.save();
+  } catch (error) {
+    logger.error('Qualified lead notification email failed', {
+      leadId: lead?._id || null,
+      appId: lead?.appId || null,
+      error: error.message,
+    });
+    try {
+      lead.notifications = {
+        ...(lead.notifications || {}),
+        qualifiedLeadEmailStatus: 'failed',
+      };
+      await lead.save();
+    } catch {}
+  }
+}
+
+async function maybeSendCompletedWorkflowEmail(lead) {
+  if (!lead || !hasCompletedWorkflowData(lead)) return;
+  if (lead?.notifications?.completedWorkflowEmailSentAt) return;
+
+  try {
+    const { businessData, appId } = await resolveBusinessNotificationContext(lead);
+    if (!businessData.email) return;
+
+    const emailService = new EmailService();
+    const completedAt = lead.updatedAt || lead.createdAt || new Date();
+    const viewLeadUrl = `${getFrontendBaseUrl()}/leads?${new URLSearchParams({
+      ...(appId ? { appId } : {}),
+      leadId: String(lead._id),
+    }).toString()}`;
+
+    await emailService.sendCompletedWorkflowNotificationEmail(businessData, {
+      leadType: String(lead.leadType || '').trim() || 'General enquiry',
+      sourceChannel: prettifyChannel(lead.sourceChannel),
+      status: String(lead.status || '').trim() || 'Complete',
+      customerName: String(lead.leadName || '').trim() || 'Not provided',
+      customerEmail: String(lead.leadEmail || '').trim() || 'Not provided',
+      customerPhone: String(lead.leadPhoneNumber || '').trim() || 'Not provided',
+      serviceType: String(lead.serviceType || '').trim() || 'Not provided',
+      initialInteraction: String(lead.initialInteraction || '').trim() || 'Widget opened',
+      summary: String(lead.summary || '').trim(),
+      description: String(lead.description || '').trim(),
+      conversationHistory: Array.isArray(lead.history) ? lead.history : [],
+      completedAtText: new Date(completedAt).toLocaleString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      }),
+      viewLeadUrl,
+    });
+
+    lead.notifications = {
+      ...(lead.notifications || {}),
+      completedWorkflowEmailSentAt: new Date(),
+      completedWorkflowEmailStatus: 'sent',
+    };
+    await lead.save();
+  } catch (error) {
+    logger.error('Completed workflow notification email failed', {
+      leadId: lead?._id || null,
+      appId: lead?.appId || null,
+      error: error.message,
+    });
+    try {
+      lead.notifications = {
+        ...(lead.notifications || {}),
+        completedWorkflowEmailStatus: 'failed',
+      };
+      await lead.save();
+    } catch {}
+  }
+}
+
 /** Resolve if current user may access this lead (for routes that don't have req.appId, e.g. GET/PUT/DELETE /:id) */
 async function canAccessLead(lead, userId, userRole, reqAppId) {
   if (userRole === 'admin') return true;
@@ -85,6 +265,8 @@ router.post('/apps/:appId', authenticateToken, verifyAppOwnership, async (req, r
     const ctx = buildClientContextFromReq(req);
     const lead = new Lead({ appId, ...value, clientContext: mergeClientContext(value.clientContext, ctx) });
     await lead.save();
+    await maybeSendQualifiedLeadEmail(lead);
+    await maybeSendCompletedWorkflowEmail(lead);
     
     // Broadcast new lead to user via WebSocket
     websocketServer.broadcastToUser(userId, {
@@ -111,6 +293,8 @@ router.post('/', authenticateToken, requireUserOrAdmin, async (req, res, next) =
     leadData.clientContext = mergeClientContext(value.clientContext, ctx);
     const lead = new Lead(leadData);
     await lead.save();
+    await maybeSendQualifiedLeadEmail(lead);
+    await maybeSendCompletedWorkflowEmail(lead);
     
     // Broadcast new lead to user via WebSocket
     websocketServer.broadcastToUser(userId, {
@@ -324,6 +508,8 @@ router.put('/:id', authenticateToken, requireUserOrAdmin, async (req, res, next)
 
     Object.assign(lead, value);
     await lead.save();
+    await maybeSendQualifiedLeadEmail(lead);
+    await maybeSendCompletedWorkflowEmail(lead);
     res.status(200).json({ status: 'success', message: 'Lead updated', data: { lead } });
   } catch (err) { next(err); }
 });
@@ -380,6 +566,8 @@ router.post('/public/:userId', verifySignedThirdPartyForParamUser, async (req, r
       mergeData.clientContext = mergeClientContext(existingOpenLead.clientContext, mergeClientContext(value.clientContext, ctx));
       Object.assign(existingOpenLead, mergeData);
       await existingOpenLead.save();
+      await maybeSendQualifiedLeadEmail(existingOpenLead);
+      await maybeSendCompletedWorkflowEmail(existingOpenLead);
       websocketServer.broadcastToUser(userId, { lead: buildLeadBroadcastPayload(existingOpenLead) });
       return res.status(200).json({ status: 'success', message: 'Lead reused', data: { lead: existingOpenLead } });
     }
@@ -388,6 +576,8 @@ router.post('/public/:userId', verifySignedThirdPartyForParamUser, async (req, r
     const leadData = { userId, ...value, clientContext: mergeClientContext(value.clientContext, ctx) };
     const lead = new Lead(leadData);
     await lead.save();
+    await maybeSendQualifiedLeadEmail(lead);
+    await maybeSendCompletedWorkflowEmail(lead);
     
     // Broadcast new lead to user via WebSocket
     websocketServer.broadcastToUser(userId, {
@@ -412,6 +602,8 @@ router.patch('/public/:userId/:leadId', verifySignedThirdPartyForParamUser, asyn
     if (!lead) return next(new AppError('Lead not found', 404));
     Object.assign(lead, value);
     await lead.save();
+    await maybeSendQualifiedLeadEmail(lead);
+    await maybeSendCompletedWorkflowEmail(lead);
     websocketServer.broadcastToUser(userId, { lead: buildLeadBroadcastPayload(lead) });
     res.status(200).json({ status: 'success', message: 'Lead updated', data: { lead } });
   } catch (err) { next(err); }
