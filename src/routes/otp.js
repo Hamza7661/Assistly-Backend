@@ -9,6 +9,8 @@ const SmsService = require('../utils/smsService');
 const { Integration } = require('../models/Integration');
 const { App } = require('../models/App');
 const crypto = require('crypto');
+const { AppSubscriptionState } = require('../models/AppSubscriptionState');
+const { AppSubscriptionStateService } = require('../services/appSubscriptionStateService');
 
 
 class OtpController {
@@ -150,7 +152,7 @@ class OtpController {
   async sendSmsOtp(req, res, next) {
     try {
       const { id: userId } = req.params;
-      const { phoneNumber } = req.body;
+      const { phoneNumber, appId } = req.body;
 
       // Validate request body
       const { error } = sendSmsOtpValidationSchema.validate({ phoneNumber });
@@ -161,6 +163,27 @@ class OtpController {
       // Validate phone number format
       if (!SmsService.validatePhoneNumber(phoneNumber)) {
         return next(new AppError('Invalid phone number format. Use E.164 format (e.g., +1234567890)', 400));
+      }
+
+      // SMS verification is controlled via paid add-on in app subscription state.
+      if (!appId) {
+        return next(new AppError('appId is required for SMS verification', 400));
+      }
+      const app = await App.findById(appId).select('_id owner').lean();
+      if (!app || String(app.owner) !== String(userId)) {
+        return next(new AppError('Invalid appId for this user', 403));
+      }
+      const ensured = await AppSubscriptionStateService.ensureStateForApp(appId);
+      const summary = AppSubscriptionStateService.summarize(ensured);
+      if (!summary?.isActive) {
+        return next(new AppError('Subscription is not active for SMS verification', 403));
+      }
+      const smsAddon = ensured?.addons?.smsVerification || {};
+      if (!smsAddon.enabled) {
+        return next(new AppError('SMS verification add-on is not enabled for this app', 403));
+      }
+      if ((smsAddon.limit || 0) > 0 && (smsAddon.used || 0) >= smsAddon.limit) {
+        return next(new AppError('SMS verification add-on limit reached', 409));
       }
 
       // Generate OTP
@@ -194,6 +217,31 @@ class OtpController {
       };
 
       await this.smsService.sendOtpSms(smsData);
+
+      const updatedState = await AppSubscriptionState.findOneAndUpdate(
+        {
+          appId,
+          'addons.smsVerification.enabled': true,
+          $or: [
+            { 'addons.smsVerification.limit': { $lte: 0 } },
+            { $expr: { $lt: ['$addons.smsVerification.used', '$addons.smsVerification.limit'] } }
+          ]
+        },
+        {
+          $inc: {
+            'addons.smsVerification.used': 1,
+            'usage.smsVerificationUsed': 1
+          }
+        },
+        { new: true }
+      );
+      if (updatedState) {
+        await AppSubscriptionStateService.logEvent(updatedState, {
+          eventType: 'usage_consumed',
+          actorType: 'ai',
+          metadata: { usageType: 'sms_verification', appId }
+        });
+      }
 
       logger.info('SMS OTP sent successfully', { userId, phoneNumber });
 

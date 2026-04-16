@@ -8,10 +8,15 @@ const { User, userValidationSchema } = require('../models/User');
 const router = express.Router();
 
 class AuthController {
-  static generateTokens(userId) {
+  static generateTokens(user) {
+    const userId = user?._id || user?.id || user;
+    const email = user?.email || undefined;
+    const role = user?.role || 'user';
     const accessToken = jwt.sign(
       { 
         userId,
+        email,
+        role,
         type: 'access',
         jti: uuidv4()
       },
@@ -26,6 +31,8 @@ class AuthController {
     const refreshToken = jwt.sign(
       { 
         userId,
+        email,
+        role,
         type: 'refresh',
         jti: uuidv4()
       },
@@ -96,7 +103,7 @@ class AuthController {
       const user = new User(userData);
       await user.save();
 
-      const { accessToken, refreshToken } = AuthController.generateTokens(user._id);
+      const { accessToken, refreshToken } = AuthController.generateTokens(user);
 
       user.lastLogin = new Date();
       await user.save();
@@ -147,7 +154,7 @@ class AuthController {
         throw new AppError('Invalid email or password', 401);
       }
 
-      const { accessToken, refreshToken } = AuthController.generateTokens(user._id);
+      const { accessToken, refreshToken } = AuthController.generateTokens(user);
 
       user.lastLogin = new Date();
       // Skip validation during signin to allow users without industry to sign in
@@ -195,7 +202,7 @@ class AuthController {
         throw new AppError('Account is deactivated', 401);
       }
 
-      const { accessToken, refreshToken: newRefreshToken } = AuthController.generateTokens(user._id);
+      const { accessToken, refreshToken: newRefreshToken } = AuthController.generateTokens(user);
 
       logger.info(`Token refreshed for user: ${user.email} (${user._id})`);
 
