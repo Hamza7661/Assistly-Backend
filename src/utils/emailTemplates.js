@@ -285,6 +285,58 @@ function _formatDateTimeRange(startText, endText) {
   return `${start} – ${end}`;
 }
 
+function _formatLeadType(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return 'General Enquiry';
+
+  // Normalize slug/case formats: register-as-a-student -> Register As A Student
+  const normalized = raw
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return normalized
+    .split(' ')
+    .filter(Boolean)
+    .map((word) => {
+      if (/^\d+\+?$/.test(word)) return word; // Keep numeric labels like "11+"
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(' ');
+}
+
+function _toSafePlainText(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+
+  // Convert known option tags to plain text then remove any leftover HTML.
+  return raw
+    .replace(/<button\b[^>]*>([\s\S]*?)<\/button>/gi, '$1')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function _renderMessageContentHtml(value, primaryColor) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '(empty)';
+
+  const buttonLabels = [];
+  const withPlaceholders = raw.replace(/<button\b[^>]*>([\s\S]*?)<\/button>/gi, (_, label) => {
+    const index = buttonLabels.push(String(label ?? '').trim()) - 1;
+    return `{{__BTN_${index}__}}`;
+  });
+
+  let escaped = _escapeHtml(withPlaceholders).replace(/\r?\n/g, '<br/>');
+
+  escaped = escaped.replace(/\{\{__BTN_(\d+)__\}\}/g, (_, idx) => {
+    const label = _escapeHtml(buttonLabels[Number(idx)] || 'Option');
+    return `<span style="display:inline-block;margin:3px 6px 3px 0;padding:4px 10px;border:1px solid ${primaryColor};border-radius:999px;font-size:12px;font-weight:600;color:${primaryColor};background:#fff;">${label}</span>`;
+  });
+
+  return escaped;
+}
+
 function _footer(theme, platformName) {
   const platform = platformName || process.env.FROM_NAME || 'UpZilo';
   const upziloLink = 'https://upzilo.com';
@@ -424,8 +476,13 @@ function buildQualifiedLeadNotificationHtml({
 }) {
   const brandTheme = _businessNotificationTheme(theme);
   const header = _platformBusinessHeader(brandTheme.notifyIcon);
+  const prettyLeadType = _formatLeadType(leadType);
+  const cleanedInitialInteraction = _toSafePlainText(initialInteraction) || 'Widget opened';
   const clickedText = Array.isArray(clickedItems) && clickedItems.length > 0
-    ? clickedItems.join(', ')
+    ? clickedItems
+      .map((item) => _toSafePlainText(item))
+      .filter(Boolean)
+      .join(', ')
     : 'Not provided';
 
   const body = `
@@ -437,7 +494,7 @@ function buildQualifiedLeadNotificationHtml({
       <table style="width:100%;border-collapse:collapse;">
         <tr>
           <td style="padding:8px 0;color:#6b7280;font-size:13px;width:130px;">Lead Type</td>
-          <td style="padding:8px 0;font-weight:600;font-size:14px;color:#111827;">${leadType}</td>
+          <td style="padding:8px 0;font-weight:600;font-size:14px;color:#111827;">${prettyLeadType}</td>
         </tr>
         <tr>
           <td style="padding:8px 0;color:#6b7280;font-size:13px;">Channel</td>
@@ -445,7 +502,7 @@ function buildQualifiedLeadNotificationHtml({
         </tr>
         <tr>
           <td style="padding:8px 0;color:#6b7280;font-size:13px;">Started With</td>
-          <td style="padding:8px 0;font-size:14px;color:#111827;">${initialInteraction}</td>
+          <td style="padding:8px 0;font-size:14px;color:#111827;">${_escapeHtml(cleanedInitialInteraction)}</td>
         </tr>
         <tr>
           <td style="padding:8px 0;color:#6b7280;font-size:13px;">Selected Items</td>
@@ -516,14 +573,16 @@ function buildCompletedWorkflowNotificationHtml({
 }) {
   const brandTheme = _businessNotificationTheme(theme);
   const header = _platformBusinessHeader(brandTheme.notifyIcon);
+  const prettyLeadType = _formatLeadType(leadType);
+  const cleanedInitialInteraction = _toSafePlainText(initialInteraction) || 'Widget opened';
   const transcriptHtml = Array.isArray(conversationHistory) && conversationHistory.length > 0
     ? conversationHistory.map((turn) => {
       const role = String(turn?.role || 'assistant').trim().toLowerCase() === 'user' ? 'Visitor' : 'Assistant';
-      const content = _escapeHtml(String(turn?.content || '').trim() || '(empty)');
+      const content = _renderMessageContentHtml(String(turn?.content || ''), brandTheme.primaryColor);
       return `
         <div style="padding:12px 14px;border:1px solid #e5e7eb;border-radius:10px;background:${role === 'Visitor' ? '#fffaf5' : '#f9fafb'};">
           <p style="margin:0 0 6px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:${brandTheme.primaryColor};">${role}</p>
-          <div style="margin:0;font-size:14px;color:#111827;white-space:pre-wrap;line-height:1.6;">${content}</div>
+          <div style="margin:0;font-size:14px;color:#111827;line-height:1.6;">${content}</div>
         </div>`;
     }).join('<div style="height:10px;"></div>')
     : '<p style="margin:0;font-size:14px;color:#6b7280;">No transcript available.</p>';
@@ -535,11 +594,11 @@ function buildCompletedWorkflowNotificationHtml({
       ${_divider(brandTheme)}
       <p style="font-size:13px;font-weight:700;color:${brandTheme.primaryColor};text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Completion Overview</p>
       <table style="width:100%;border-collapse:collapse;">
-        <tr><td style="padding:8px 0;color:#6b7280;font-size:13px;width:130px;">Lead Type</td><td style="padding:8px 0;font-weight:600;font-size:14px;color:#111827;">${leadType}</td></tr>
+        <tr><td style="padding:8px 0;color:#6b7280;font-size:13px;width:130px;">Lead Type</td><td style="padding:8px 0;font-weight:600;font-size:14px;color:#111827;">${prettyLeadType}</td></tr>
         <tr><td style="padding:8px 0;color:#6b7280;font-size:13px;">Status</td><td style="padding:8px 0;font-size:14px;color:#111827;">${status}</td></tr>
         <tr><td style="padding:8px 0;color:#6b7280;font-size:13px;">Channel</td><td style="padding:8px 0;font-size:14px;color:#111827;">${sourceChannel}</td></tr>
         <tr><td style="padding:8px 0;color:#6b7280;font-size:13px;">Service</td><td style="padding:8px 0;font-size:14px;color:#111827;">${serviceType}</td></tr>
-        <tr><td style="padding:8px 0;color:#6b7280;font-size:13px;">Started With</td><td style="padding:8px 0;font-size:14px;color:#111827;">${initialInteraction}</td></tr>
+        <tr><td style="padding:8px 0;color:#6b7280;font-size:13px;">Started With</td><td style="padding:8px 0;font-size:14px;color:#111827;">${_escapeHtml(cleanedInitialInteraction)}</td></tr>
         <tr><td style="padding:8px 0;color:#6b7280;font-size:13px;">Completed At</td><td style="padding:8px 0;font-size:14px;color:#111827;">${completedAtText}</td></tr>
       </table>
       ${summary ? `<div style="margin:18px 0 0;background:#f9fafb;border-left:3px solid ${brandTheme.primaryColor};padding:12px 14px;border-radius:0 4px 4px 0;"><p style="margin:0 0 4px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:${brandTheme.primaryColor};">Summary</p><div style="margin:0;font-size:14px;color:#374151;">${_escapeHtml(summary)}</div></div>` : ''}
