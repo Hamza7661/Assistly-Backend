@@ -309,9 +309,11 @@ function _toSafePlainText(value) {
   const raw = String(value ?? '').trim();
   if (!raw) return '';
 
-  // Convert known option tags to plain text then remove any leftover HTML.
+  // Convert known option/file tags to plain text then remove any leftover HTML.
   return raw
     .replace(/<button\b[^>]*>([\s\S]*?)<\/button>/gi, '$1')
+    .replace(/<checkbox\b[^>]*>([\s\S]*?)<\/checkbox>/gi, '$1')
+    .replace(/<file\b[^>]*>([\s\S]*?)<\/file>/gi, '$1')
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -321,18 +323,45 @@ function _renderMessageContentHtml(value, primaryColor) {
   const raw = String(value ?? '').trim();
   if (!raw) return '(empty)';
 
-  const buttonLabels = [];
-  const withPlaceholders = raw.replace(/<button\b[^>]*>([\s\S]*?)<\/button>/gi, (_, label) => {
-    const index = buttonLabels.push(String(label ?? '').trim()) - 1;
-    return `{{__BTN_${index}__}}`;
-  });
+  const pills = [];
+  const files = [];
+  let withPlaceholders = raw
+    .replace(/<button\b[^>]*>([\s\S]*?)<\/button>/gi, (_, label) => {
+      const index = pills.push({ label: String(label ?? '').trim(), kind: 'button' }) - 1;
+      return `{{__PILL_${index}__}}`;
+    })
+    .replace(/<checkbox\b[^>]*>([\s\S]*?)<\/checkbox>/gi, (_, label) => {
+      const index = pills.push({ label: String(label ?? '').trim(), kind: 'checkbox' }) - 1;
+      return `{{__PILL_${index}__}}`;
+    })
+    .replace(/<file\b([^>]*)>([\s\S]*?)<\/file>/gi, (_, attrs, innerLabel) => {
+      const urlMatch = String(attrs || '').match(/\burl=["']([^"']+)["']/i);
+      const nameMatch = String(attrs || '').match(/\bname=["']([^"']+)["']/i);
+      const url = (urlMatch?.[1] || '').trim();
+      const name = (nameMatch?.[1] || '').trim();
+      const label = String(innerLabel || '').trim() || name || 'Download file';
+      const index = files.push({ url, name, label }) - 1;
+      return `{{__FILE_${index}__}}`;
+    });
 
   let escaped = _escapeHtml(withPlaceholders).replace(/\r?\n/g, '<br/>');
 
-  escaped = escaped.replace(/\{\{__BTN_(\d+)__\}\}/g, (_, idx) => {
-    const label = _escapeHtml(buttonLabels[Number(idx)] || 'Option');
-    return `<span style="display:inline-block;margin:3px 6px 3px 0;padding:4px 10px;border:1px solid ${primaryColor};border-radius:999px;font-size:12px;font-weight:600;color:${primaryColor};background:#fff;">${label}</span>`;
-  });
+  escaped = escaped
+    .replace(/\{\{__PILL_(\d+)__\}\}/g, (_, idx) => {
+      const item = pills[Number(idx)] || { label: 'Option', kind: 'button' };
+      const label = _escapeHtml(item.label || 'Option');
+      const isCheckbox = item.kind === 'checkbox';
+      return `<span style="display:inline-block;margin:3px 6px 3px 0;padding:4px 10px;border:1px solid ${isCheckbox ? '#d1d5db' : primaryColor};border-radius:${isCheckbox ? '10px' : '999px'};font-size:12px;font-weight:600;color:${isCheckbox ? '#111827' : primaryColor};background:${isCheckbox ? '#f9fafb' : '#fff'};">${label}</span>`;
+    })
+    .replace(/\{\{__FILE_(\d+)__\}\}/g, (_, idx) => {
+      const file = files[Number(idx)] || { url: '', name: '', label: 'Download file' };
+      const label = _escapeHtml(file.label || file.name || 'Download file');
+      const href = _escapeHtml(file.url || '');
+      if (!href) {
+        return `<span style="display:inline-block;margin:3px 0;padding:4px 0;color:#6b7280;font-size:13px;">${label}</span>`;
+      }
+      return `<a href="${href}" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin:3px 0;color:${primaryColor};font-weight:600;font-size:13px;text-decoration:underline;">${label}</a>`;
+    });
 
   return escaped;
 }
