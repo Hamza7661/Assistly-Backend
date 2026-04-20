@@ -13,6 +13,27 @@ const { generateSlotsFromRules, isAllowedSlotMinutes } = require('../services/av
 const { logger } = require('../utils/logger');
 const EmailService = require('../utils/emailService');
 
+function resolvePublicBackendBaseUrl(req) {
+  const raw =
+    process.env.BACKEND_URL ||
+    process.env.API_BASE_URL ||
+    process.env.APP_URL ||
+    process.env.NEXT_PUBLIC_API_URL ||
+    '';
+  const trimmed = String(raw).trim().replace(/\/$/, '');
+  if (trimmed) {
+    return trimmed.replace(/\/api(?:\/v\d+)?$/i, '');
+  }
+
+  const requestHost = String(req?.get?.('host') || '').trim();
+  if (!requestHost) return '';
+  const protocol =
+    String(req?.headers?.['x-forwarded-proto'] || '').split(',')[0].trim() ||
+    req?.protocol ||
+    'https';
+  return `${protocol}://${requestHost}`.replace(/\/$/, '');
+}
+
 const router = express.Router();
 
 /**
@@ -202,8 +223,11 @@ router.post('/apps/:appId/appointments', verifySignedThirdPartyForParamUser, asy
           .lean()
           .exec();
         const emailService = new EmailService();
+        const publicBackendBase = resolvePublicBackendBaseUrl(req);
         const logoUrl = integration?.chatbotImage?.filename
-          ? `${process.env.NEXT_PUBLIC_API_URL || ''}/api/v1/integration/public/apps/${appId}/chatbot-image`
+          ? (publicBackendBase
+            ? `${publicBackendBase}/api/v1/integration/public/apps/${appId}/chatbot-image`
+            : '')
           : '';
         // companyName is the real business brand (e.g. "Facelism"); assistantName is the bot persona (e.g. "Assistant")
         const resolvedCompanyName = integration?.companyName || app?.name || 'Business';

@@ -467,5 +467,7 @@ router.get('/apps/:appId/image', authenticateToken, verifyAppOwnership, integrat
 
 // Public routes (HMAC protected) - for widget access
 router.get('/public/apps/:appId', verifySignedThirdPartyForParamUser, integrationController.getPublicIntegration);
+// Public chatbot image endpoint for email clients and widgets that cannot sign requests.
+router.get('/public/apps/:appId/chatbot-image', integrationController.getChatbotImage);
 
 module.exports = router;
