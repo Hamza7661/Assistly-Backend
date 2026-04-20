@@ -9,6 +9,22 @@ const {
   buildCompletedWorkflowNotificationHtml,
 } = require('./emailTemplates');
 
+function humanizeLeadType(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return 'General Enquiry';
+  return raw
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean)
+    .map((word) => {
+      if (/^\d+\+?$/.test(word)) return word;
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(' ');
+}
+
 class EmailService {
   constructor() {
     // Initialize SendGrid with API key from environment
@@ -347,6 +363,7 @@ class EmailService {
       logoUrl: businessData?.logoUrl,
     });
 
+    const readableLeadType = humanizeLeadType(leadData?.leadType || 'General enquiry');
     const htmlContent = buildQualifiedLeadNotificationHtml({
       businessName: companyName,
       leadType: leadData?.leadType || 'General enquiry',
@@ -368,11 +385,11 @@ class EmailService {
 
     return this.sendEmail({
       to: businessEmail,
-      subject: `New Lead Generated – ${leadData?.leadType || 'Chatbot Lead'} (${leadData?.customerName || 'Visitor'})`,
+      subject: `New Lead Generated – ${readableLeadType} (${leadData?.customerName || 'Visitor'})`,
       htmlContent,
       textContent:
         `A new lead has been generated through your chatbot. ` +
-        `Lead type: ${leadData?.leadType || 'General enquiry'}. ` +
+        `Lead type: ${readableLeadType}. ` +
         `Contact: ${leadData?.customerName || 'Not provided'} | ${leadData?.customerEmail || 'Not provided'} | ${leadData?.customerPhone || 'Not provided'}. ` +
         `${leadData?.viewLeadUrl ? `View in system: ${leadData.viewLeadUrl}` : ''}`,
       fromName: alertFromName,
@@ -390,6 +407,7 @@ class EmailService {
       logoUrl: businessData?.logoUrl,
     });
 
+    const readableLeadType = humanizeLeadType(leadData?.leadType || 'General enquiry');
     const htmlContent = buildCompletedWorkflowNotificationHtml({
       businessName: companyName,
       leadType: leadData?.leadType || 'General enquiry',
@@ -415,11 +433,11 @@ class EmailService {
 
     return this.sendEmail({
       to: businessEmail,
-      subject: `Workflow Completed – ${leadData?.leadType || 'Chatbot Lead'} (${leadData?.customerName || 'Visitor'})`,
+      subject: `Workflow Completed – ${readableLeadType} (${leadData?.customerName || 'Visitor'})`,
       htmlContent,
       textContent:
         `A chatbot workflow has been completed. ` +
-        `Lead type: ${leadData?.leadType || 'General enquiry'}. ` +
+        `Lead type: ${readableLeadType}. ` +
         `Status: ${leadData?.status || 'Complete'}. ` +
         `Contact: ${leadData?.customerName || 'Not provided'} | ${leadData?.customerEmail || 'Not provided'} | ${leadData?.customerPhone || 'Not provided'}. ` +
         `${leadData?.viewLeadUrl ? `View in system: ${leadData.viewLeadUrl}` : ''}`,
