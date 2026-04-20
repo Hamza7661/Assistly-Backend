@@ -9,6 +9,7 @@ const { logger, logRequest } = require('./utils/logger');
 const { globalErrorHandler, notFoundHandler } = require('./utils/errorHandler');
 const cacheManager = require('./utils/cache');
 const websocketServer = require('./utils/websocketServer');
+const emailOrchestratorService = require('./services/emailOrchestratorService');
 
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/user');
@@ -113,6 +114,9 @@ class Application {
     try {
       await databaseManager.connect();
       await cacheManager.connect();
+      if (String(process.env.EMAIL_WORKER_ENABLED || 'true').toLowerCase() !== 'false') {
+        await emailOrchestratorService.startWorker();
+      }
       
       const server = this.app.listen(this.port, () => {
         logger.info(`🚀 Assistly Backend running on port ${this.port}`);
@@ -147,6 +151,7 @@ class Application {
         try {
           await databaseManager.disconnect();
           await cacheManager.disconnect();
+          await emailOrchestratorService.stopWorker();
           logger.info('Graceful shutdown completed');
           process.exit(0);
         } catch (error) {

@@ -4,18 +4,17 @@ const { Otp, sendEmailOtpValidationSchema, sendSmsOtpValidationSchema, verifyOtp
 const { logger } = require('../utils/logger');
 const { AppError } = require('../utils/errorHandler');
 const { verifySignedThirdPartyForParamUser } = require('../middleware/thirdParty');
-const EmailService = require('../utils/emailService');
 const SmsService = require('../utils/smsService');
 const { Integration } = require('../models/Integration');
 const { App } = require('../models/App');
 const crypto = require('crypto');
 const { AppSubscriptionState } = require('../models/AppSubscriptionState');
 const { AppSubscriptionStateService } = require('../services/appSubscriptionStateService');
+const emailOrchestratorService = require('../services/emailOrchestratorService');
 
 
 class OtpController {
   constructor() {
-    this.emailService = new EmailService();
     this.smsService = new SmsService();
   }
 
@@ -122,7 +121,17 @@ class OtpController {
         supportEmail: resolvedSupportEmail,
       };
 
-      await this.emailService.sendOtpEmail(emailData, templateData);
+      await emailOrchestratorService.enqueueTemplateEmail({
+        templateType: 'otp_email',
+        dedupeKey: `otp:${String(otpRecord._id)}:email`,
+        toEmail: emailData.email,
+        appId: trimmedAppId || null,
+        userId,
+        payload: {
+          userData: emailData,
+          templateData,
+        },
+      });
 
       logger.info('Email OTP sent successfully', { userId, email });
 

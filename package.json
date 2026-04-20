@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "cross-env NODE_ENV=development node src/app.js",
+    "start:email-worker": "node src/workers/emailWorker.js",
     "seed": "node seeders/mainSeeder.js seed",
     "seed:clear": "node seeders/mainSeeder.js clear",
     "seed:reset": "node seeders/mainSeeder.js reset",

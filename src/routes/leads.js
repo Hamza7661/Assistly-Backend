@@ -3,14 +3,11 @@ const { AppError } = require('../utils/errorHandler');
 const { authenticateToken, requireUserOrAdmin } = require('../middleware/auth');
 const { verifySignedThirdPartyForParamUser } = require('../middleware/thirdParty');
 const { verifyAppOwnership } = require('../middleware/appOwnership');
-const { App } = require('../models/App');
-const { User } = require('../models/User');
-const { Integration } = require('../models/Integration');
 const { Lead, leadCreateSchema, leadQuerySchema, leadUpdateSchema } = require('../models/Lead');
 const { LeadReadState } = require('../models/LeadReadState');
-const EmailService = require('../utils/emailService');
 const { logger } = require('../utils/logger');
 const websocketServer = require('../utils/websocketServer');
+const emailOrchestratorService = require('../services/emailOrchestratorService');
 
 const router = express.Router();
 
@@ -64,179 +61,29 @@ function buildLeadBroadcastPayload(lead) {
   };
 }
 
-function hasQualifiedLeadData(lead) {
-  const hasLeadType = !!String(lead?.leadType || '').trim();
-  const hasPersonalInfo = !!(
-    String(lead?.leadName || '').trim() ||
-    String(lead?.leadEmail || '').trim() ||
-    String(lead?.leadPhoneNumber || '').trim()
-  );
-  return hasLeadType && hasPersonalInfo;
-}
-
-function hasCompletedWorkflowData(lead) {
-  const status = String(lead?.status || '').trim().toLowerCase();
-  const isCompleted = status === 'complete' || status === 'confirmed';
-  const hasHistory = Array.isArray(lead?.history) && lead.history.length > 0;
-  return isCompleted && hasHistory;
-}
-
-function getFrontendBaseUrl() {
-  return (process.env.FRONTEND_BASE_URL || process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
-}
-
-function prettifyChannel(sourceChannel) {
-  const raw = String(sourceChannel || '').trim();
-  if (!raw) return 'Chatbot';
-  return raw
-    .split(/[_\s-]+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-}
-
-async function resolveBusinessNotificationContext(lead) {
-  const appId = lead?.appId ? String(lead.appId) : '';
-  const ownerId = lead?.userId ? String(lead.userId) : '';
-  const [app, owner, integration] = await Promise.all([
-    appId ? App.findById(appId).select('_id owner name').lean() : null,
-    appId
-      ? App.findById(appId).select('owner').lean().then((appDoc) => {
-        if (!appDoc?.owner) return null;
-        return User.findById(appDoc.owner).select('email').lean();
-      })
-      : (ownerId ? User.findById(ownerId).select('email').lean() : null),
-    appId ? Integration.findOne({ owner: appId }).select('companyName primaryColor chatbotImage').lean() : null
-  ]);
-
-  const companyName = integration?.companyName || app?.name || 'Business';
-  const logoUrl = integration?.chatbotImage?.filename
-    ? `${getFrontendBaseUrl()}/uploads/chatbots/${integration.chatbotImage.filename}`
-    : '';
-
-  return {
-    businessData: {
-      appId,
-      companyName,
-      primaryColor: integration?.primaryColor || undefined,
-      email: owner?.email || '',
-      logoUrl,
-    },
-    appId,
-  };
-}
-
 async function maybeSendQualifiedLeadEmail(lead) {
-  if (!lead || !hasQualifiedLeadData(lead)) return;
-  if (lead?.notifications?.qualifiedLeadEmailSentAt) return;
-
   try {
-    const { businessData, appId } = await resolveBusinessNotificationContext(lead);
-    if (!businessData.email) return;
-
-    const emailService = new EmailService();
-    const createdAt = lead.updatedAt || lead.createdAt || new Date();
-    const viewLeadUrl = `${getFrontendBaseUrl()}/leads?${new URLSearchParams({
-      ...(appId ? { appId } : {}),
-      leadId: String(lead._id),
-    }).toString()}`;
-
-    await emailService.sendQualifiedLeadNotificationEmail(businessData, {
-      leadType: String(lead.leadType || '').trim() || 'General enquiry',
-      sourceChannel: prettifyChannel(lead.sourceChannel),
-      customerName: String(lead.leadName || '').trim() || 'Not provided',
-      customerEmail: String(lead.leadEmail || '').trim() || 'Not provided',
-      customerPhone: String(lead.leadPhoneNumber || '').trim() || 'Not provided',
-      initialInteraction: String(lead.initialInteraction || '').trim() || 'Widget opened',
-      clickedItems: Array.isArray(lead.clickedItems) ? lead.clickedItems.filter(Boolean) : [],
-      createdAtText: new Date(createdAt).toLocaleString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-      }),
-      viewLeadUrl,
-    });
-
-    lead.notifications = {
-      ...(lead.notifications || {}),
-      qualifiedLeadEmailSentAt: new Date(),
-      qualifiedLeadEmailStatus: 'sent',
-    };
-    await lead.save();
+    await emailOrchestratorService.enqueueLeadDigest(lead);
   } catch (error) {
-    logger.error('Qualified lead notification email failed', {
+    logger.error('Lead digest enqueue failed (qualified flow)', {
       leadId: lead?._id || null,
       appId: lead?.appId || null,
       error: error.message,
     });
-    try {
-      lead.notifications = {
-        ...(lead.notifications || {}),
-        qualifiedLeadEmailStatus: 'failed',
-      };
-      await lead.save();
-    } catch {}
   }
 }
 
 async function maybeSendCompletedWorkflowEmail(lead) {
-  if (!lead || !hasCompletedWorkflowData(lead)) return;
-  if (lead?.notifications?.completedWorkflowEmailSentAt) return;
-
   try {
-    const { businessData, appId } = await resolveBusinessNotificationContext(lead);
-    if (!businessData.email) return;
-
-    const emailService = new EmailService();
-    const completedAt = lead.updatedAt || lead.createdAt || new Date();
-    const viewLeadUrl = `${getFrontendBaseUrl()}/leads?${new URLSearchParams({
-      ...(appId ? { appId } : {}),
-      leadId: String(lead._id),
-    }).toString()}`;
-
-    await emailService.sendCompletedWorkflowNotificationEmail(businessData, {
-      leadType: String(lead.leadType || '').trim() || 'General enquiry',
-      sourceChannel: prettifyChannel(lead.sourceChannel),
-      status: String(lead.status || '').trim() || 'Complete',
-      customerName: String(lead.leadName || '').trim() || 'Not provided',
-      customerEmail: String(lead.leadEmail || '').trim() || 'Not provided',
-      customerPhone: String(lead.leadPhoneNumber || '').trim() || 'Not provided',
-      serviceType: String(lead.serviceType || '').trim() || 'Not provided',
-      initialInteraction: String(lead.initialInteraction || '').trim() || 'Widget opened',
-      summary: String(lead.summary || '').trim(),
-      description: String(lead.description || '').trim(),
-      conversationHistory: Array.isArray(lead.history) ? lead.history : [],
-      completedAtText: new Date(completedAt).toLocaleString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-      }),
-      viewLeadUrl,
-    });
-
-    lead.notifications = {
-      ...(lead.notifications || {}),
-      completedWorkflowEmailSentAt: new Date(),
-      completedWorkflowEmailStatus: 'sent',
-    };
-    await lead.save();
+    const status = String(lead?.status || '').trim().toLowerCase();
+    if (status !== 'complete' && status !== 'confirmed') return;
+    await emailOrchestratorService.enqueueLeadDigest(lead, { sendNow: true });
   } catch (error) {
-    logger.error('Completed workflow notification email failed', {
+    logger.error('Lead digest enqueue failed (completed flow)', {
       leadId: lead?._id || null,
       appId: lead?.appId || null,
       error: error.message,
     });
-    try {
-      lead.notifications = {
-        ...(lead.notifications || {}),
-        completedWorkflowEmailStatus: 'failed',
-      };
-      await lead.save();
-    } catch {}
   }
 }
 

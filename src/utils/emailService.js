@@ -7,6 +7,7 @@ const {
   buildBusinessNotificationHtml,
   buildQualifiedLeadNotificationHtml,
   buildCompletedWorkflowNotificationHtml,
+  buildCustomerWelcomeHtml,
 } = require('./emailTemplates');
 
 class EmailService {
@@ -333,6 +334,36 @@ class EmailService {
       htmlContent,
       textContent: `New appointment booked: ${serviceName} at ${startText}. Customer: ${customerName} | ${customerEmail} | ${customerPhone}.`,
       fromName: alertFromName,
+    });
+  }
+
+  async sendWelcomeEmail(userData, businessData = {}, welcomeData = {}) {
+    const customerEmail = userData?.email;
+    if (!customerEmail) throw new Error('Customer email is required');
+
+    const customerName = userData?.firstName || userData?.name || 'User';
+    const companyName = businessData?.companyName || businessData?.name || process.env.FROM_NAME || 'Our Team';
+    const supportEmail = welcomeData?.supportEmail || businessData?.supportEmail || process.env.FROM_EMAIL || '';
+    const dashboardUrl = welcomeData?.dashboardUrl || process.env.FRONTEND_URL || process.env.CLIENT_APP_URL || '';
+    const theme = getCompanyTheme(companyName, {
+      appId: businessData?.appId,
+      primaryColor: businessData?.primaryColor,
+      logoUrl: businessData?.logoUrl,
+    });
+
+    const htmlContent = buildCustomerWelcomeHtml({
+      customerName,
+      dashboardUrl,
+      supportEmail,
+      theme,
+    });
+
+    return this.sendEmail({
+      to: customerEmail,
+      subject: `Welcome to ${companyName}`,
+      htmlContent,
+      textContent: `Welcome ${customerName}. Your account is ready. Access your dashboard here: ${dashboardUrl}`,
+      fromName: companyName,
     });
   }
 

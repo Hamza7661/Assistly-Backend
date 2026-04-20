@@ -11,7 +11,7 @@ const { getAppointmentSchedulerProvider, PROVIDER_GOOGLE, PROVIDER_OUTLOOK } = r
 const { availabilitySuccess, availabilityNotConnectedOrError } = require('../integrations/appointment/commonViewModel');
 const { generateSlotsFromRules, isAllowedSlotMinutes } = require('../services/availabilitySlotGenerator');
 const { logger } = require('../utils/logger');
-const EmailService = require('../utils/emailService');
+const emailOrchestratorService = require('../services/emailOrchestratorService');
 
 const router = express.Router();
 
@@ -201,7 +201,6 @@ router.post('/apps/:appId/appointments', verifySignedThirdPartyForParamUser, asy
           .select('assistantName companyName primaryColor chatbotImage googleCalendarTimezone')
           .lean()
           .exec();
-        const emailService = new EmailService();
         const logoUrl = integration?.chatbotImage?.filename
           ? `${process.env.NEXT_PUBLIC_API_URL || ''}/api/v1/integration/public/apps/${appId}/chatbot-image`
           : '';
@@ -246,19 +245,33 @@ router.post('/apps/:appId/appointments', verifySignedThirdPartyForParamUser, asy
         const resolvedCustomerPhone = customerPhone || 'Not provided';
         let confirmationEmailSent = false;
         if (attendeeEmail) {
-          await emailService.sendAppointmentConfirmationEmail(
-            { name: resolvedCustomerName, email: attendeeEmail },
-            appointmentData,
-            businessData
-          );
+          await emailOrchestratorService.enqueueTemplateEmail({
+            templateType: 'appointment_confirmation_email',
+            dedupeKey: `appointment:${String(viewModel.eventId || `${appId}-${start}-${attendeeEmail}`)}:customer`,
+            toEmail: attendeeEmail,
+            appId,
+            leadId: leadId || null,
+            payload: {
+              customerData: { name: resolvedCustomerName, email: attendeeEmail },
+              appointmentData,
+              businessData,
+            },
+          });
           confirmationEmailSent = true;
         }
         if (businessData.email) {
-          await emailService.sendAppointmentBusinessNotificationEmail(
-            businessData,
-            { name: resolvedCustomerName, email: attendeeEmail || 'Not provided', phone: resolvedCustomerPhone },
-            appointmentData
-          );
+          await emailOrchestratorService.enqueueTemplateEmail({
+            templateType: 'appointment_business_notification_email',
+            dedupeKey: `appointment:${String(viewModel.eventId || `${appId}-${start}`)}:business`,
+            toEmail: businessData.email,
+            appId,
+            leadId: leadId || null,
+            payload: {
+              businessData,
+              customerData: { name: resolvedCustomerName, email: attendeeEmail || 'Not provided', phone: resolvedCustomerPhone },
+              appointmentData,
+            },
+          });
         }
 
         // If customer confirmation email was sent successfully, mark the initiating lead as confirmed.

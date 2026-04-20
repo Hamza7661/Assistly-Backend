@@ -3,6 +3,11 @@
 const fs = require('fs');
 const path = require('path');
 const { logger } = require('./logger');
+const { buildCustomerConfirmationHtml: buildCustomerConfirmationTemplate } = require('./emailTemplates/bookingConfirmationCustomer');
+const { buildBusinessNotificationHtml: buildBusinessNotificationTemplate } = require('./emailTemplates/bookingConfirmationBusiness');
+const { buildQualifiedLeadNotificationHtml: buildQualifiedLeadNotificationTemplate } = require('./emailTemplates/qualifiedLeadNotification');
+const { buildCompletedWorkflowNotificationHtml: buildCompletedWorkflowNotificationTemplate } = require('./emailTemplates/completedWorkflowNotification');
+const { buildCustomerWelcomeHtml: buildCustomerWelcomeTemplate } = require('./emailTemplates/customerWelcome');
 
 /**
  * Absolute URL for static assets on the web app (logos). Set FRONTEND_URL in the API .env
@@ -311,42 +316,25 @@ function buildCustomerConfirmationHtml({
   contactPhone,
   theme,
 }) {
-  const header = _customerConfirmationHeader(theme);
-  const dateTimeText = _formatDateTimeRange(startText, endText);
-  const contactLine = contactPhone
-    ? `If you need to reschedule or have any questions, please contact us directly at <strong>${contactPhone}</strong>.`
-    : 'If you need to reschedule or have any questions, please contact us directly.';
-
-  const body = `
-    <div style="padding:28px 28px 8px;font-family:${theme.bodyFontFamily};color:#1f2937;line-height:1.6;">
-      <p style="font-size:16px;">Hi <strong>${customerName}</strong>,</p>
-      <p>Your appointment with <strong>${theme.companyName}</strong> has been confirmed. We look forward to seeing you!</p>
-      ${_divider(theme)}
-      <table style="width:100%;border-collapse:collapse;">
-        <tr>
-          <td style="padding:8px 0;color:#6b7280;font-size:13px;width:130px;">Service</td>
-          <td style="padding:8px 0;font-weight:600;font-size:14px;color:#111827;">${serviceName}</td>
-        </tr>
-        <tr>
-          <td style="padding:8px 0;color:#6b7280;font-size:13px;">Date &amp; Time</td>
-          <td style="padding:8px 0;font-weight:600;font-size:14px;color:#111827;">${dateTimeText}</td>
-        </tr>
-      </table>
-      ${_divider(theme)}
-      ${calendarLink ? `<p style="text-align:center;margin:20px 0;">${_button(calendarLink, 'View in Calendar', theme)}</p>` : ''}
-      ${postBookingNote ? `
-      <div style="background:#faf9f7;border-left:3px solid ${theme.primaryColor};padding:12px 16px;margin:16px 0;border-radius:0 4px 4px 0;">
-        <p style="margin:0 0 4px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:${theme.primaryColor};">Important Instructions</p>
-        <div style="margin:0;font-size:13px;color:#374151;line-height:1.6;">${postBookingNote}</div>
-      </div>` : ''}
-      <p style="margin-top:24px;font-size:14px;">${contactLine}</p>
-      <p style="margin-top:20px;font-size:14px;">
-        Warm regards,<br/>
-        <strong style="font-family:${theme.fontFamily};color:${theme.primaryColor};">${theme.companyName}</strong>
-      </p>
-    </div>`;
-
-  return _wrapEmail(header, body, theme);
+  return buildCustomerConfirmationTemplate(
+    {
+      customerName,
+      serviceName,
+      startText,
+      endText,
+      calendarLink,
+      postBookingNote,
+      contactPhone,
+      theme,
+    },
+    {
+      customerConfirmationHeader: _customerConfirmationHeader,
+      formatDateTimeRange: _formatDateTimeRange,
+      divider: _divider,
+      button: _button,
+      wrapEmail: _wrapEmail,
+    }
+  );
 }
 
 /**
@@ -363,47 +351,27 @@ function buildBusinessNotificationHtml({
   calendarLink,
   theme,
 }) {
-  const brandTheme = _businessNotificationTheme(theme);
-  const header = _platformBusinessHeader(brandTheme.notifyIcon);
-  const dateTimeText = _formatDateTimeRange(startText, endText);
-
-  const body = `
-    <div style="padding:28px 28px 8px;font-family:${brandTheme.bodyFontFamily};color:#1f2937;line-height:1.6;">
-      <p style="font-size:15px;">Hi <strong>${businessName}</strong>,</p>
-      <p>A new appointment has been booked through your UpZilo assistant.</p>
-      ${_divider(brandTheme)}
-      <p style="font-size:13px;font-weight:700;color:${brandTheme.primaryColor};text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Appointment Details</p>
-      <table style="width:100%;border-collapse:collapse;">
-        <tr>
-          <td style="padding:8px 0;color:#6b7280;font-size:13px;width:130px;">Service</td>
-          <td style="padding:8px 0;font-weight:600;font-size:14px;color:#111827;">${serviceName}</td>
-        </tr>
-        <tr>
-          <td style="padding:8px 0;color:#6b7280;font-size:13px;">Date &amp; Time</td>
-          <td style="padding:8px 0;font-weight:600;font-size:14px;color:#111827;">${dateTimeText}</td>
-        </tr>
-      </table>
-      ${_divider(brandTheme)}
-      <p style="font-size:13px;font-weight:700;color:${brandTheme.primaryColor};text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Customer Details</p>
-      <table style="width:100%;border-collapse:collapse;">
-        <tr>
-          <td style="padding:8px 0;color:#6b7280;font-size:13px;width:130px;">Name</td>
-          <td style="padding:8px 0;font-weight:600;font-size:14px;color:#111827;">${customerName}</td>
-        </tr>
-        <tr>
-          <td style="padding:8px 0;color:#6b7280;font-size:13px;">Email</td>
-          <td style="padding:8px 0;font-size:14px;color:#111827;">${customerEmail}</td>
-        </tr>
-        <tr>
-          <td style="padding:8px 0;color:#6b7280;font-size:13px;">Phone</td>
-          <td style="padding:8px 0;font-size:14px;color:#111827;">${customerPhone}</td>
-        </tr>
-      </table>
-      ${_divider(brandTheme)}
-      ${calendarLink ? `<p style="margin:16px 0;">${_button(calendarLink, 'Open in Calendar', brandTheme)}</p>` : ''}
-    </div>`;
-
-  return _wrapEmail(header, body, brandTheme);
+  return buildBusinessNotificationTemplate(
+    {
+      businessName,
+      customerName,
+      customerEmail,
+      customerPhone,
+      serviceName,
+      startText,
+      endText,
+      calendarLink,
+      theme,
+    },
+    {
+      businessNotificationTheme: _businessNotificationTheme,
+      platformBusinessHeader: _platformBusinessHeader,
+      formatDateTimeRange: _formatDateTimeRange,
+      divider: _divider,
+      button: _button,
+      wrapEmail: _wrapEmail,
+    }
+  );
 }
 
 /**
@@ -422,67 +390,28 @@ function buildQualifiedLeadNotificationHtml({
   viewLeadUrl,
   theme,
 }) {
-  const brandTheme = _businessNotificationTheme(theme);
-  const header = _platformBusinessHeader(brandTheme.notifyIcon);
-  const clickedText = Array.isArray(clickedItems) && clickedItems.length > 0
-    ? clickedItems.join(', ')
-    : 'Not provided';
-
-  const body = `
-    <div style="padding:28px 28px 8px;font-family:${brandTheme.bodyFontFamily};color:#1f2937;line-height:1.6;">
-      <p style="font-size:15px;">Hi <strong>${businessName}</strong>,</p>
-      <p>Your UpZilo assistant has generated a new qualified lead. Their details are ready for review in your dashboard.</p>
-      ${_divider(brandTheme)}
-      <p style="font-size:13px;font-weight:700;color:${brandTheme.primaryColor};text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Lead Summary</p>
-      <table style="width:100%;border-collapse:collapse;">
-        <tr>
-          <td style="padding:8px 0;color:#6b7280;font-size:13px;width:130px;">Lead Type</td>
-          <td style="padding:8px 0;font-weight:600;font-size:14px;color:#111827;">${leadType}</td>
-        </tr>
-        <tr>
-          <td style="padding:8px 0;color:#6b7280;font-size:13px;">Channel</td>
-          <td style="padding:8px 0;font-size:14px;color:#111827;">${sourceChannel}</td>
-        </tr>
-        <tr>
-          <td style="padding:8px 0;color:#6b7280;font-size:13px;">Started With</td>
-          <td style="padding:8px 0;font-size:14px;color:#111827;">${initialInteraction}</td>
-        </tr>
-        <tr>
-          <td style="padding:8px 0;color:#6b7280;font-size:13px;">Selected Items</td>
-          <td style="padding:8px 0;font-size:14px;color:#111827;">${clickedText}</td>
-        </tr>
-        <tr>
-          <td style="padding:8px 0;color:#6b7280;font-size:13px;">Qualified At</td>
-          <td style="padding:8px 0;font-size:14px;color:#111827;">${createdAtText}</td>
-        </tr>
-      </table>
-      ${_divider(brandTheme)}
-      <p style="font-size:13px;font-weight:700;color:${brandTheme.primaryColor};text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Contact Details</p>
-      <table style="width:100%;border-collapse:collapse;">
-        <tr>
-          <td style="padding:8px 0;color:#6b7280;font-size:13px;width:130px;">Name</td>
-          <td style="padding:8px 0;font-weight:600;font-size:14px;color:#111827;">${customerName}</td>
-        </tr>
-        <tr>
-          <td style="padding:8px 0;color:#6b7280;font-size:13px;">Email</td>
-          <td style="padding:8px 0;font-size:14px;color:#111827;">${customerEmail}</td>
-        </tr>
-        <tr>
-          <td style="padding:8px 0;color:#6b7280;font-size:13px;">Phone</td>
-          <td style="padding:8px 0;font-size:14px;color:#111827;">${customerPhone}</td>
-        </tr>
-      </table>
-      ${_divider(brandTheme)}
-      <div style="background:#f9fafb;border:1px solid #e5e7eb;padding:14px 16px;border-radius:10px;margin:18px 0;">
-        <p style="margin:0 0 6px;font-size:13px;font-weight:700;color:${brandTheme.primaryColor};">Why this matters</p>
-        <p style="margin:0;font-size:14px;color:#374151;">
-          Your chatbot has already captured the visitor's intent and personal details, helping your team respond faster with context instead of starting from scratch.
-        </p>
-      </div>
-      ${viewLeadUrl ? `<p style="margin:18px 0 6px;">${_button(viewLeadUrl, 'View Lead In System', brandTheme)}</p>` : ''}
-    </div>`;
-
-  return _wrapEmail(header, body, brandTheme);
+  return buildQualifiedLeadNotificationTemplate(
+    {
+      businessName,
+      leadType,
+      sourceChannel,
+      customerName,
+      customerEmail,
+      customerPhone,
+      initialInteraction,
+      clickedItems,
+      createdAtText,
+      viewLeadUrl,
+      theme,
+    },
+    {
+      businessNotificationTheme: _businessNotificationTheme,
+      platformBusinessHeader: _platformBusinessHeader,
+      divider: _divider,
+      button: _button,
+      wrapEmail: _wrapEmail,
+    }
+  );
 }
 
 function _escapeHtml(value) {
@@ -514,50 +443,33 @@ function buildCompletedWorkflowNotificationHtml({
   viewLeadUrl,
   theme,
 }) {
-  const brandTheme = _businessNotificationTheme(theme);
-  const header = _platformBusinessHeader(brandTheme.notifyIcon);
-  const transcriptHtml = Array.isArray(conversationHistory) && conversationHistory.length > 0
-    ? conversationHistory.map((turn) => {
-      const role = String(turn?.role || 'assistant').trim().toLowerCase() === 'user' ? 'Visitor' : 'Assistant';
-      const content = _escapeHtml(String(turn?.content || '').trim() || '(empty)');
-      return `
-        <div style="padding:12px 14px;border:1px solid #e5e7eb;border-radius:10px;background:${role === 'Visitor' ? '#fffaf5' : '#f9fafb'};">
-          <p style="margin:0 0 6px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:${brandTheme.primaryColor};">${role}</p>
-          <div style="margin:0;font-size:14px;color:#111827;white-space:pre-wrap;line-height:1.6;">${content}</div>
-        </div>`;
-    }).join('<div style="height:10px;"></div>')
-    : '<p style="margin:0;font-size:14px;color:#6b7280;">No transcript available.</p>';
-
-  const body = `
-    <div style="padding:28px 28px 8px;font-family:${brandTheme.bodyFontFamily};color:#1f2937;line-height:1.6;">
-      <p style="font-size:15px;">Hi <strong>${businessName}</strong>,</p>
-      <p>A visitor has completed your chatbot workflow. The full conversation and captured details are ready for review.</p>
-      ${_divider(brandTheme)}
-      <p style="font-size:13px;font-weight:700;color:${brandTheme.primaryColor};text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Completion Overview</p>
-      <table style="width:100%;border-collapse:collapse;">
-        <tr><td style="padding:8px 0;color:#6b7280;font-size:13px;width:130px;">Lead Type</td><td style="padding:8px 0;font-weight:600;font-size:14px;color:#111827;">${leadType}</td></tr>
-        <tr><td style="padding:8px 0;color:#6b7280;font-size:13px;">Status</td><td style="padding:8px 0;font-size:14px;color:#111827;">${status}</td></tr>
-        <tr><td style="padding:8px 0;color:#6b7280;font-size:13px;">Channel</td><td style="padding:8px 0;font-size:14px;color:#111827;">${sourceChannel}</td></tr>
-        <tr><td style="padding:8px 0;color:#6b7280;font-size:13px;">Service</td><td style="padding:8px 0;font-size:14px;color:#111827;">${serviceType}</td></tr>
-        <tr><td style="padding:8px 0;color:#6b7280;font-size:13px;">Started With</td><td style="padding:8px 0;font-size:14px;color:#111827;">${initialInteraction}</td></tr>
-        <tr><td style="padding:8px 0;color:#6b7280;font-size:13px;">Completed At</td><td style="padding:8px 0;font-size:14px;color:#111827;">${completedAtText}</td></tr>
-      </table>
-      ${summary ? `<div style="margin:18px 0 0;background:#f9fafb;border-left:3px solid ${brandTheme.primaryColor};padding:12px 14px;border-radius:0 4px 4px 0;"><p style="margin:0 0 4px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:${brandTheme.primaryColor};">Summary</p><div style="margin:0;font-size:14px;color:#374151;">${_escapeHtml(summary)}</div></div>` : ''}
-      ${description ? `<div style="margin:12px 0 0;background:#fff;border:1px solid #e5e7eb;padding:12px 14px;border-radius:8px;"><p style="margin:0 0 4px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:${brandTheme.primaryColor};">Details</p><div style="margin:0;font-size:14px;color:#374151;white-space:pre-wrap;">${_escapeHtml(description)}</div></div>` : ''}
-      ${_divider(brandTheme)}
-      <p style="font-size:13px;font-weight:700;color:${brandTheme.primaryColor};text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Contact Details</p>
-      <table style="width:100%;border-collapse:collapse;">
-        <tr><td style="padding:8px 0;color:#6b7280;font-size:13px;width:130px;">Name</td><td style="padding:8px 0;font-weight:600;font-size:14px;color:#111827;">${customerName}</td></tr>
-        <tr><td style="padding:8px 0;color:#6b7280;font-size:13px;">Email</td><td style="padding:8px 0;font-size:14px;color:#111827;">${customerEmail}</td></tr>
-        <tr><td style="padding:8px 0;color:#6b7280;font-size:13px;">Phone</td><td style="padding:8px 0;font-size:14px;color:#111827;">${customerPhone}</td></tr>
-      </table>
-      ${_divider(brandTheme)}
-      <p style="font-size:13px;font-weight:700;color:${brandTheme.primaryColor};text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Conversation History</p>
-      <div>${transcriptHtml}</div>
-      ${viewLeadUrl ? `<p style="margin:20px 0 6px;">${_button(viewLeadUrl, 'View Lead In System', brandTheme)}</p>` : ''}
-    </div>`;
-
-  return _wrapEmail(header, body, brandTheme);
+  return buildCompletedWorkflowNotificationTemplate(
+    {
+      businessName,
+      leadType,
+      sourceChannel,
+      status,
+      customerName,
+      customerEmail,
+      customerPhone,
+      serviceType,
+      initialInteraction,
+      summary,
+      description,
+      conversationHistory,
+      completedAtText,
+      viewLeadUrl,
+      theme,
+    },
+    {
+      businessNotificationTheme: _businessNotificationTheme,
+      platformBusinessHeader: _platformBusinessHeader,
+      divider: _divider,
+      button: _button,
+      escapeHtml: _escapeHtml,
+      wrapEmail: _wrapEmail,
+    }
+  );
 }
 
 /**
@@ -628,6 +540,28 @@ function buildBrandedOtpHtml({
   return _wrapEmail(header, body, resolvedTheme);
 }
 
+function buildCustomerWelcomeHtml({
+  customerName,
+  dashboardUrl,
+  supportEmail,
+  theme,
+}) {
+  return buildCustomerWelcomeTemplate(
+    {
+      customerName,
+      dashboardUrl,
+      supportEmail,
+      theme,
+    },
+    {
+      logoHtml: _logoHtml,
+      divider: _divider,
+      button: _button,
+      wrapEmail: _wrapEmail,
+    }
+  );
+}
+
 function _wrapEmail(header, body, theme) {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -655,5 +589,6 @@ module.exports = {
   buildBusinessNotificationHtml,
   buildQualifiedLeadNotificationHtml,
   buildCompletedWorkflowNotificationHtml,
+  buildCustomerWelcomeHtml,
   resolveFrontendAssetUrl,
 };
