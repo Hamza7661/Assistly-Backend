@@ -563,7 +563,10 @@ router.post('/public/:userId', verifySignedThirdPartyForParamUser, async (req, r
       if (Array.isArray(mergeData.clickedItems) && mergeData.clickedItems.length === 0) delete mergeData.clickedItems;
       if (!mergeData.initialInteraction) delete mergeData.initialInteraction;
       if (existingOpenLead.status === 'in_progress' && mergeData.status === 'interacting') delete mergeData.status;
-      mergeData.clientContext = mergeClientContext(existingOpenLead.clientContext, mergeClientContext(value.clientContext, ctx));
+      // Prefer this request's clientContext (e.g. browser) over the existing record so server-side
+      // creates (AI egress) do not permanently mask the visitor IP / user-agent.
+      const incomingCtx = mergeClientContext(value.clientContext, ctx);
+      mergeData.clientContext = { ...(existingOpenLead.clientContext || {}), ...incomingCtx };
       Object.assign(existingOpenLead, mergeData);
       await existingOpenLead.save();
       await maybeSendQualifiedLeadEmail(existingOpenLead);
