@@ -180,6 +180,29 @@ class AppController {
   }
 
   /**
+   * Unsubscribe a Facebook Page from this app's webhook in Meta.
+   */
+  static async unsubscribePageWebhook(pageId, pageAccessToken) {
+    const apiVersion = process.env.FACEBOOK_API_VERSION || 'v22.0';
+
+    if (!pageId || !pageAccessToken) return;
+
+    const url =
+      `https://graph.facebook.com/${apiVersion}/${encodeURIComponent(pageId)}/subscribed_apps` +
+      `?access_token=${encodeURIComponent(pageAccessToken)}`;
+
+    const res = await fetch(url, { method: 'DELETE' });
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok || data.error) {
+      logger.warn('Failed to unsubscribe Facebook page webhook (best-effort)', {
+        pageId,
+        error: data?.error?.message || res.statusText
+      });
+    }
+  }
+
+  /**
    * Subscribe a Facebook Page to this app's webhook in Meta.
    * This assumes the app-level webhook URL + verify token are already configured
    * in the Meta App Dashboard; here we only associate the Page with the app.
@@ -2106,6 +2129,24 @@ class AppController {
       const { id } = req.params;
 
       const app = await AppController.verifyAppOwnership(id, userId);
+
+      // Retrieve the stored page access token (select: false) so we can unsubscribe
+      // the Meta webhook before wiping it — without this the subscription orphans on Meta's side
+      // and can interfere with the next reconnect attempt.
+      if (app.facebookPageId) {
+        try {
+          const appWithToken = await App.findById(app._id).select('+facebookPageAccessToken');
+          await AppController.unsubscribePageWebhook(
+            app.facebookPageId,
+            appWithToken?.facebookPageAccessToken
+          );
+        } catch (e) {
+          logger.warn('Best-effort Facebook webhook unsubscribe failed during disconnect', {
+            appId: app._id,
+            error: e?.message
+          });
+        }
+      }
 
       app.facebookPageId = null;
       app.facebookPageName = null;
