@@ -122,10 +122,12 @@ class AppController {
     const expiresIn = exchangeData.expires_in || 60 * 24 * 60 * 60; // default ~60 days
     const tokenExpiry = new Date(Date.now() + expiresIn * 1000);
 
-    // 2) Use long-lived user token to fetch managed pages and get page access token
+    // 2) Use long-lived user token to fetch managed pages and get page access token.
+    //    Try /me/accounts first (personal pages). If empty, fall back to the Business API
+    //    because pages managed via Meta Business Manager don't appear in /me/accounts.
     const accountsRes = await fetch(
       `${FACEBOOK_GRAPH_BASE_URL}/${apiVersion}/me/accounts` +
-      `?fields=id,name,access_token` +
+      `?fields=id,name,access_token&limit=100` +
       `&access_token=${encodeURIComponent(longLivedToken)}`
     );
     const accountsData = await accountsRes.json();
@@ -133,7 +135,33 @@ class AppController {
       throw new AppError(`Failed to retrieve Facebook pages: ${accountsData.error.message}`, 400);
     }
 
-    const page = (accountsData.data || []).find(p => p.id === String(pageId));
+    let page = (accountsData.data || []).find(p => p.id === String(pageId));
+
+    // Fallback: page is managed through Meta Business Manager — not in /me/accounts
+    if (!page) {
+      const bizRes = await fetch(
+        `${FACEBOOK_GRAPH_BASE_URL}/${apiVersion}/me/businesses` +
+        `?fields=id,name&limit=100` +
+        `&access_token=${encodeURIComponent(longLivedToken)}`
+      );
+      const bizData = await bizRes.json();
+
+      if (!bizData.error && Array.isArray(bizData.data)) {
+        for (const biz of bizData.data) {
+          const pagesRes = await fetch(
+            `${FACEBOOK_GRAPH_BASE_URL}/${apiVersion}/${encodeURIComponent(biz.id)}/owned_pages` +
+            `?fields=id,name,access_token&limit=100` +
+            `&access_token=${encodeURIComponent(longLivedToken)}`
+          );
+          const pagesData = await pagesRes.json();
+          if (!pagesData.error) {
+            page = (pagesData.data || []).find(p => p.id === String(pageId));
+            if (page) break;
+          }
+        }
+      }
+    }
+
     if (!page) {
       throw new AppError('Selected Facebook page not found in your managed pages list', 400);
     }
