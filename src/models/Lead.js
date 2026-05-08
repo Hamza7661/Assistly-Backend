@@ -51,6 +51,12 @@ const leadSchema = new mongoose.Schema({
     role: { type: String, enum: ['user', 'assistant', 'system'], default: 'user' },
     content: { type: String, trim: true, default: null }
   }],
+  notifications: {
+    qualifiedLeadEmailSentAt: { type: Date, default: null },
+    qualifiedLeadEmailStatus: { type: String, enum: ['pending', 'sent', 'failed'], default: null },
+    completedWorkflowEmailSentAt: { type: Date, default: null },
+    completedWorkflowEmailStatus: { type: String, enum: ['pending', 'sent', 'failed'], default: null }
+  },
   leadDateTime: { type: Date, default: Date.now, index: true },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }

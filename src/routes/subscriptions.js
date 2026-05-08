@@ -6,11 +6,13 @@ const stripe = (stripeKey && typeof stripeKey === 'string' && stripeKey.trim() !
   ? require('stripe')(stripeKey)
   : null;
 const { User } = require('../models/User');
+const { App } = require('../models/App');
 const { Package } = require('../models/Package');
 const { Subscription } = require('../models/Subscription');
 const { authenticateToken } = require('../middleware/auth');
 const { AppError } = require('../utils/errorHandler');
 const { logger } = require('../utils/logger');
+const { AppSubscriptionStateService } = require('../services/appSubscriptionStateService');
 
 // Helper function to check if Stripe is configured
 const checkStripeConfigured = (req, res, next) => {
@@ -259,6 +261,32 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
 });
 
 // Helper functions for webhook handlers
+async function syncUserAppsPaymentState(userId, paymentCleared, billingStatus, metadata = {}) {
+  try {
+    const apps = await App.find({ owner: userId, isActive: true }).select('_id').lean();
+    for (const app of apps) {
+      await AppSubscriptionStateService.markPaymentCleared({
+        appId: app._id,
+        paymentCleared,
+        billingStatus,
+        actorType: 'webhook',
+        actorId: 'stripe',
+        metadata
+      });
+      if (paymentCleared) {
+        await AppSubscriptionStateService.resetCycle({
+          appId: app._id,
+          actorType: 'webhook',
+          actorId: 'stripe',
+          metadata: { ...metadata, reason: 'payment_cleared_cycle_reset' }
+        });
+      }
+    }
+  } catch (error) {
+    logger.warn('Failed syncing app subscription state from Stripe event', { userId, error: error.message });
+  }
+}
+
 async function handleCheckoutCompleted(session) {
   try {
     if (!stripe) {
@@ -318,6 +346,13 @@ async function handleCheckoutCompleted(session) {
     }
     await user.save();
 
+    await syncUserAppsPaymentState(
+      userId,
+      stripeSubscription.status === 'active' || stripeSubscription.status === 'trialing',
+      stripeSubscription.status,
+      { eventType: 'checkout.session.completed', stripeSubscriptionId: stripeSubscription.id }
+    );
+
     logger.info('Checkout completed and subscription created:', { userId, subscriptionId: subscription._id });
   } catch (error) {
     logger.error('Error handling checkout completed:', error);
@@ -344,6 +379,14 @@ async function handleSubscriptionUpdate(stripeSubscription) {
     }
 
     await subscription.save();
+
+    const paymentCleared = stripeSubscription.status === 'active' || stripeSubscription.status === 'trialing';
+    await syncUserAppsPaymentState(
+      subscription.user,
+      paymentCleared,
+      stripeSubscription.status,
+      { eventType: 'customer.subscription.updated', stripeSubscriptionId: stripeSubscription.id }
+    );
 
     logger.info('Subscription updated:', { subscriptionId: subscription._id, status: subscription.status });
   } catch (error) {
@@ -377,6 +420,12 @@ async function handleSubscriptionDeleted(stripeSubscription) {
       }
       user.subscription = null;
       await user.save();
+      await syncUserAppsPaymentState(
+        user._id,
+        false,
+        'canceled',
+        { eventType: 'customer.subscription.deleted', stripeSubscriptionId: stripeSubscription.id }
+      );
     }
 
     logger.info('Subscription canceled:', { subscriptionId: subscription._id });
@@ -393,6 +442,12 @@ async function handlePaymentSucceeded(invoice) {
     if (subscription) {
       subscription.status = 'active';
       await subscription.save();
+      await syncUserAppsPaymentState(
+        subscription.user,
+        true,
+        'active',
+        { eventType: 'invoice.payment_succeeded', stripeCustomerId: invoice.customer }
+      );
       logger.info('Payment succeeded for subscription:', subscription._id);
     }
   } catch (error) {
@@ -408,6 +463,12 @@ async function handlePaymentFailed(invoice) {
     if (subscription) {
       subscription.status = 'past_due';
       await subscription.save();
+      await syncUserAppsPaymentState(
+        subscription.user,
+        false,
+        'past_due',
+        { eventType: 'invoice.payment_failed', stripeCustomerId: invoice.customer }
+      );
       logger.warn('Payment failed for subscription:', subscription._id);
     }
   } catch (error) {

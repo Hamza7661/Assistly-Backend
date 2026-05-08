@@ -8,6 +8,7 @@ const { QuestionType } = require('../models/QuestionType');
 const { LEAD_TYPES_LIST } = require('../enums/leadTypes');
 const { Integration, getConnectedCalendarTimezone } = require('../models/Integration');
 const { App } = require('../models/App');
+const { AppSubscriptionStateService } = require('../services/appSubscriptionStateService');
 const cacheManager = require('../utils/cache');
 const { authenticateToken, requireAdmin, requireUserOrAdmin } = require('../middleware/auth');
 const { verifySignedThirdPartyForParamUser } = require('../middleware/thirdParty');
@@ -169,7 +170,7 @@ class UserController {
 
       const treatmentPromise = Questionnaire.find({ owner: id, type: QUESTIONNAIRE_TYPES.SERVICE_PLAN, isActive: true })
         .select('question answer postBookingNote attachedWorkflows')
-        .populate('attachedWorkflows.workflowId', 'title question questionTypeId choiceInputMode options isRoot order')
+        .populate('attachedWorkflows.workflowId', 'title question questionTypeId choiceInputMode options isRoot order askForBookingAtEnd')
         .sort({ updatedAt: -1 })
         .exec();
 
@@ -183,7 +184,7 @@ class UserController {
 
       const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
       const workflowPromise = ChatbotWorkflow.find({ owner: id })
-        .select('title question questionTypeId choiceInputMode options attachment.hasFile attachment.filename attachment.contentType isRoot order workflowGroupId isActive')
+        .select('title question questionTypeId choiceInputMode options attachment.hasFile attachment.filename attachment.contentType isRoot order workflowGroupId isActive askForBookingAtEnd')
         .sort({ order: 1, createdAt: 1 })
         .exec();
 
@@ -220,7 +221,8 @@ class UserController {
               choiceInputMode: aw.workflowId.choiceInputMode || 'button',
               options: aw.workflowId.options || [],
               isRoot: aw.workflowId.isRoot,
-              order: aw.workflowId.order
+              order: aw.workflowId.order,
+              askForBookingAtEnd: aw.workflowId.askForBookingAtEnd !== false
             } : null
           }))
       }));
@@ -247,7 +249,8 @@ class UserController {
           isRoot: w.isRoot,
           order: w.order,
           workflowGroupId: w.workflowGroupId,
-          isActive: w.isActive
+          isActive: w.isActive,
+          askForBookingAtEnd: w.askForBookingAtEnd !== false
         };
         
         if (w.isRoot || !w.workflowGroupId) {
@@ -290,6 +293,7 @@ class UserController {
                 order: rootWorkflow.order,
                 workflowGroupId: rootWorkflow.workflowGroupId,
                 isActive: rootWorkflow.isActive,
+                askForBookingAtEnd: rootWorkflow.askForBookingAtEnd !== false,
                 questions: []
               };
               rootWorkflows.push(workflowMap[groupId]);
@@ -373,6 +377,8 @@ class UserController {
       
       const workflows = rootWorkflows;
 
+      const subscriptionSummary = null;
+
       // Prepare integration data
       const integrationData = integration ? {
         assistantName: integration.assistantName,
@@ -386,7 +392,9 @@ class UserController {
         conversationStyle: integration.conversationStyle || false,
         captureFeedbackEnabled: !!integration.captureFeedbackEnabled,
         googleReviewEnabled: !!integration.googleReviewEnabled,
-        googleReviewUrl: integration.googleReviewUrl || null
+        googleReviewUrl: integration.googleReviewUrl || null,
+        subscriptionState: subscriptionSummary,
+        smsVerificationAddonEnabled: !!subscriptionSummary?.addons?.smsVerification?.enabled
       } : {
         assistantName: 'Assistant',
         companyName: '',
@@ -399,7 +407,9 @@ class UserController {
         conversationStyle: false,
         captureFeedbackEnabled: false,
         googleReviewEnabled: false,
-        googleReviewUrl: null
+        googleReviewUrl: null,
+        subscriptionState: subscriptionSummary,
+        smsVerificationAddonEnabled: false
       };
 
       const responseData = {
@@ -458,7 +468,7 @@ class UserController {
 
       const treatmentPromise = Questionnaire.find({ owner: appId, type: QUESTIONNAIRE_TYPES.SERVICE_PLAN, isActive: true })
         .select('question answer postBookingNote attachedWorkflows')
-        .populate('attachedWorkflows.workflowId', 'title question questionTypeId choiceInputMode options isRoot order')
+        .populate('attachedWorkflows.workflowId', 'title question questionTypeId choiceInputMode options isRoot order askForBookingAtEnd')
         .sort({ updatedAt: -1 })
         .exec();
 
@@ -479,7 +489,7 @@ class UserController {
 
       const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
       const workflowPromise = ChatbotWorkflow.find({ owner: appId })
-        .select('title question questionTypeId choiceInputMode options attachment.hasFile attachment.filename attachment.contentType isRoot order workflowGroupId isActive')
+        .select('title question questionTypeId choiceInputMode options attachment.hasFile attachment.filename attachment.contentType isRoot order workflowGroupId isActive askForBookingAtEnd')
         .sort({ order: 1, createdAt: 1 })
         .exec();
 
@@ -511,7 +521,8 @@ class UserController {
               choiceInputMode: aw.workflowId.choiceInputMode || 'button',
               options: aw.workflowId.options || [],
               isRoot: aw.workflowId.isRoot,
-              order: aw.workflowId.order
+              order: aw.workflowId.order,
+              askForBookingAtEnd: aw.workflowId.askForBookingAtEnd !== false
             } : null
           }))
       }));
@@ -537,7 +548,8 @@ class UserController {
           isRoot: w.isRoot,
           order: w.order,
           workflowGroupId: w.workflowGroupId,
-          isActive: w.isActive
+          isActive: w.isActive,
+          askForBookingAtEnd: w.askForBookingAtEnd !== false
         };
 
         if (w.isRoot || !w.workflowGroupId) {
@@ -577,6 +589,7 @@ class UserController {
                 order: rootWorkflow.order,
                 workflowGroupId: rootWorkflow.workflowGroupId,
                 isActive: rootWorkflow.isActive,
+                askForBookingAtEnd: rootWorkflow.askForBookingAtEnd !== false,
                 questions: []
               };
               rootWorkflows.push(workflowMap[groupId]);
@@ -643,6 +656,9 @@ class UserController {
 
       const workflows = rootWorkflows;
 
+      const subscriptionState = await AppSubscriptionStateService.ensureStateForApp(app._id);
+      const subscriptionSummary = AppSubscriptionStateService.summarize(subscriptionState);
+
       const integrationData = integration ? {
         assistantName: integration.assistantName,
         companyName: integration.companyName || '',
@@ -658,8 +674,10 @@ class UserController {
         googleReviewUrl: integration.googleReviewUrl || null,
         calendarConnected: !!integration.googleCalendarConnected,
         calendarSlotMinutes: integration.calendarSlotMinutes ?? 30,
-        calendarTimezone: getConnectedCalendarTimezone(integration),
-        leadTypeMessages: integration.leadTypeMessages || []
+        calendarTimezone: integration.googleCalendarTimezone || null,
+        leadTypeMessages: integration.leadTypeMessages || [],
+        subscriptionState: subscriptionSummary,
+        smsVerificationAddonEnabled: !!subscriptionSummary?.addons?.smsVerification?.enabled
       } : {
         assistantName: 'Assistant',
         companyName: '',
@@ -676,7 +694,9 @@ class UserController {
         calendarConnected: false,
         calendarSlotMinutes: 30,
         calendarTimezone: null,
-        leadTypeMessages: []
+        leadTypeMessages: [],
+        subscriptionState: subscriptionSummary,
+        smsVerificationAddonEnabled: !!subscriptionSummary?.addons?.smsVerification?.enabled
       };
 
       const responseData = {
@@ -752,7 +772,7 @@ class UserController {
       
       const treatmentPromise = Questionnaire.find({ owner: appId, type: QUESTIONNAIRE_TYPES.SERVICE_PLAN, isActive: true })
         .select('question answer postBookingNote attachedWorkflows')
-        .populate('attachedWorkflows.workflowId', 'title question questionTypeId choiceInputMode options isRoot order')
+        .populate('attachedWorkflows.workflowId', 'title question questionTypeId choiceInputMode options isRoot order askForBookingAtEnd')
         .sort({ updatedAt: -1 })
         .exec();
 
@@ -773,7 +793,7 @@ class UserController {
 
       const { ChatbotWorkflow } = require('../models/ChatbotWorkflow');
       const workflowPromise = ChatbotWorkflow.find({ owner: appId })
-        .select('title question questionTypeId choiceInputMode options attachment.hasFile attachment.filename attachment.contentType isRoot order workflowGroupId isActive')
+        .select('title question questionTypeId choiceInputMode options attachment.hasFile attachment.filename attachment.contentType isRoot order workflowGroupId isActive askForBookingAtEnd')
         .sort({ order: 1, createdAt: 1 })
         .exec();
 
@@ -806,7 +826,8 @@ class UserController {
               choiceInputMode: aw.workflowId.choiceInputMode || 'button',
               options: aw.workflowId.options || [],
               isRoot: aw.workflowId.isRoot,
-              order: aw.workflowId.order
+              order: aw.workflowId.order,
+              askForBookingAtEnd: aw.workflowId.askForBookingAtEnd !== false
             } : null
           }))
       }));
@@ -833,7 +854,8 @@ class UserController {
           isRoot: w.isRoot,
           order: w.order,
           workflowGroupId: w.workflowGroupId,
-          isActive: w.isActive
+          isActive: w.isActive,
+          askForBookingAtEnd: w.askForBookingAtEnd !== false
         };
         
         if (w.isRoot || !w.workflowGroupId) {
@@ -876,6 +898,7 @@ class UserController {
                 order: rootWorkflow.order,
                 workflowGroupId: rootWorkflow.workflowGroupId,
                 isActive: rootWorkflow.isActive,
+                askForBookingAtEnd: rootWorkflow.askForBookingAtEnd !== false,
                 questions: []
               };
               rootWorkflows.push(workflowMap[groupId]);
@@ -959,6 +982,9 @@ class UserController {
       
       const workflows = rootWorkflows;
 
+      const subscriptionState = await AppSubscriptionStateService.ensureStateForApp(appId);
+      const subscriptionSummary = AppSubscriptionStateService.summarize(subscriptionState);
+
       // Prepare integration data
       const integrationData = integration ? {
         assistantName: integration.assistantName,
@@ -975,8 +1001,10 @@ class UserController {
         googleReviewUrl: integration.googleReviewUrl || null,
         calendarConnected: !!integration.googleCalendarConnected,
         calendarSlotMinutes: integration.calendarSlotMinutes ?? 30,
-        calendarTimezone: getConnectedCalendarTimezone(integration),
-        leadTypeMessages: integration.leadTypeMessages || []
+        calendarTimezone: integration.googleCalendarTimezone || null,
+        leadTypeMessages: integration.leadTypeMessages || [],
+        subscriptionState: subscriptionSummary,
+        smsVerificationAddonEnabled: !!subscriptionSummary?.addons?.smsVerification?.enabled
       } : {
         assistantName: 'Assistant',
         companyName: '',
@@ -993,7 +1021,9 @@ class UserController {
         calendarConnected: false,
         calendarSlotMinutes: 30,
         calendarTimezone: null,
-        leadTypeMessages: []
+        leadTypeMessages: [],
+        subscriptionState: subscriptionSummary,
+        smsVerificationAddonEnabled: !!subscriptionSummary?.addons?.smsVerification?.enabled
       };
 
       const responseData = {

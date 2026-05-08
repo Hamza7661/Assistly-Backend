@@ -79,6 +79,7 @@ class IntegrationController {
             captureLeadEmail: integration.captureLeadEmail !== false,
             captureLeadPhoneNumber: integration.captureLeadPhoneNumber !== false,
             conversationStyle: integration.conversationStyle || false,
+            chatbotUiMode: integration.chatbotUiMode || 'basic',
             captureFeedbackEnabled: !!integration.captureFeedbackEnabled,
             googleReviewEnabled: integration.googleReviewEnabled || false,
             googleReviewUrl: integration.googleReviewUrl || null,
@@ -123,6 +124,14 @@ class IntegrationController {
       }
       if (typeof updateData.conversationStyle === 'string') {
         updateData.conversationStyle = updateData.conversationStyle === 'true';
+      }
+      if (typeof updateData.chatbotUiMode === 'string') {
+        const mode = updateData.chatbotUiMode.trim().toLowerCase();
+        if (mode === 'basic' || mode === 'advanced') {
+          updateData.chatbotUiMode = mode;
+        } else {
+          delete updateData.chatbotUiMode;
+        }
       }
       if (typeof updateData.captureFeedbackEnabled === 'string') {
         updateData.captureFeedbackEnabled = updateData.captureFeedbackEnabled === 'true';
@@ -332,6 +341,7 @@ class IntegrationController {
             captureLeadEmail: integration.captureLeadEmail !== false,
             captureLeadPhoneNumber: integration.captureLeadPhoneNumber !== false,
             conversationStyle: integration.conversationStyle || false,
+            chatbotUiMode: integration.chatbotUiMode || 'basic',
             captureFeedbackEnabled: !!integration.captureFeedbackEnabled,
             googleReviewEnabled: integration.googleReviewEnabled || false,
             googleReviewUrl: integration.googleReviewUrl || null,
@@ -381,7 +391,8 @@ class IntegrationController {
           assistantName: 'Assistant',
           companyName: '',
           greeting: process.env.DEFAULT_GREETING || 'Hello! How can I help you today?',
-          primaryColor: process.env.DEFAULT_PRIMARY_COLOR || '#3B82F6'
+          primaryColor: process.env.DEFAULT_PRIMARY_COLOR || '#3B82F6',
+          chatbotUiMode: 'basic'
         };
       }
 
@@ -401,8 +412,10 @@ class IntegrationController {
               data: null
             },
             assistantName: integration.assistantName,
+            companyName: integration.companyName,
             greeting: integration.greeting,
             primaryColor: integration.primaryColor,
+            chatbotUiMode: integration.chatbotUiMode || 'basic',
             leadTypeMessages: integration.leadTypeMessages || []
           }
         }
@@ -454,5 +467,7 @@ router.get('/apps/:appId/image', authenticateToken, verifyAppOwnership, integrat
 
 // Public routes (HMAC protected) - for widget access
 router.get('/public/apps/:appId', verifySignedThirdPartyForParamUser, integrationController.getPublicIntegration);
+// Public chatbot image endpoint for email clients and widgets that cannot sign requests.
+router.get('/public/apps/:appId/chatbot-image', integrationController.getChatbotImage);
 
 module.exports = router;
