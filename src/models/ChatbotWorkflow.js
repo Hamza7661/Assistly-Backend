@@ -82,6 +82,10 @@ const chatbotWorkflowSchema = new mongoose.Schema({
     default: true,
     index: true
   },
+  askForBookingAtEnd: {
+    type: Boolean,
+    default: true
+  },
   order: {
     type: Number,
     default: 0
@@ -126,6 +130,7 @@ const workflowValidationSchema = Joi.object({
   options: Joi.array().items(workflowOptionValidationSchema).optional(),
   isRoot: Joi.boolean().optional(),
   isActive: Joi.boolean().optional(),
+  askForBookingAtEnd: Joi.boolean().optional(),
   order: Joi.number().optional()
 });
 
@@ -138,6 +143,7 @@ const workflowUpdateValidationSchema = Joi.object({
   options: Joi.array().items(workflowOptionValidationSchema).optional(),
   isRoot: Joi.boolean().optional(),
   isActive: Joi.boolean().optional(),
+  askForBookingAtEnd: Joi.boolean().optional(),
   order: Joi.number().optional()
 });
 

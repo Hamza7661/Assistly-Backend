@@ -88,6 +88,16 @@ const integrationSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  /**
+   * Web widget launcher UI mode:
+   * - basic: current compact bubble launcher
+   * - advanced: branded mini-home launcher UI
+   */
+  chatbotUiMode: {
+    type: String,
+    enum: ['basic', 'advanced'],
+    default: 'basic'
+  },
   captureFeedbackEnabled: {
     type: Boolean,
     default: false
@@ -284,6 +294,7 @@ const integrationValidationSchema = Joi.object({
   captureLeadEmail: Joi.boolean().optional(),
   captureLeadPhoneNumber: Joi.boolean().optional(),
   conversationStyle: Joi.boolean().optional(),
+  chatbotUiMode: Joi.string().valid('basic', 'advanced').optional(),
   captureFeedbackEnabled: Joi.boolean().optional(),
   googleReviewEnabled: Joi.boolean().optional(),
   googleReviewUrl: Joi.string().max(500).allow(null, '').optional(),
@@ -321,6 +332,7 @@ const integrationUpdateValidationSchema = Joi.object({
   captureLeadEmail: Joi.boolean().optional(),
   captureLeadPhoneNumber: Joi.boolean().optional(),
   conversationStyle: Joi.boolean().optional(),
+  chatbotUiMode: Joi.string().valid('basic', 'advanced').optional(),
   captureFeedbackEnabled: Joi.boolean().optional(),
   googleReviewEnabled: Joi.boolean().optional(),
   googleReviewUrl: Joi.string().max(500).allow(null, '').optional(),

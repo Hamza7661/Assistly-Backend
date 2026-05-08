@@ -67,6 +67,12 @@ const userSchema = new mongoose.Schema({
       message: 'Please enter a valid email address'
     }
   },
+  role: {
+    type: String,
+    enum: ['user', 'admin', 'super_admin'],
+    default: 'user',
+    index: true
+  },
   professionDescription: {
     type: String,
     required: [true, 'Profession description is required'],
@@ -464,6 +470,10 @@ const userValidationSchema = Joi.object({
     .messages({
       'string.uri': 'Please enter a valid URL'
     }),
+  
+  role: Joi.string()
+    .valid('user', 'admin', 'super_admin')
+    .optional(),
   
   package: Joi.string()
     .optional()

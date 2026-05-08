@@ -5,7 +5,25 @@ const {
   buildBrandedOtpHtml,
   buildCustomerConfirmationHtml,
   buildBusinessNotificationHtml,
+  buildQualifiedLeadNotificationHtml,
+  buildCompletedWorkflowNotificationHtml,
 } = require('./emailTemplates');
+
+function humanizeLeadType(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return 'General Enquiry';
+  return raw
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean)
+    .map((word) => {
+      if (/^\d+\+?$/.test(word)) return word;
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(' ');
+}
 
 class EmailService {
   constructor() {
@@ -330,6 +348,99 @@ class EmailService {
       subject: `New Appointment – ${serviceName} (${customerName})`,
       htmlContent,
       textContent: `New appointment booked: ${serviceName} at ${startText}. Customer: ${customerName} | ${customerEmail} | ${customerPhone}.`,
+      fromName: alertFromName,
+    });
+  }
+
+  async sendQualifiedLeadNotificationEmail(businessData, leadData) {
+    const businessEmail = businessData?.email;
+    if (!businessEmail) throw new Error('Business email is required');
+
+    const companyName = businessData?.companyName || businessData?.name || 'Business';
+    const theme = getCompanyTheme(companyName, {
+      appId: businessData?.appId,
+      primaryColor: businessData?.primaryColor,
+      logoUrl: businessData?.logoUrl,
+    });
+
+    const readableLeadType = humanizeLeadType(leadData?.leadType || 'General enquiry');
+    const htmlContent = buildQualifiedLeadNotificationHtml({
+      businessName: companyName,
+      leadType: leadData?.leadType || 'General enquiry',
+      sourceChannel: leadData?.sourceChannel || 'Chatbot',
+      customerName: leadData?.customerName || 'Not provided',
+      customerEmail: leadData?.customerEmail || 'Not provided',
+      customerPhone: leadData?.customerPhone || 'Not provided',
+      initialInteraction: leadData?.initialInteraction || 'Widget opened',
+      clickedItems: Array.isArray(leadData?.clickedItems) ? leadData.clickedItems : [],
+      createdAtText: leadData?.createdAtText || 'Just now',
+      viewLeadUrl: leadData?.viewLeadUrl || '',
+      theme,
+    });
+
+    const alertFromName =
+      process.env.BOOKING_ALERT_FROM_NAME ||
+      process.env.FROM_NAME ||
+      'UpZilo';
+
+    return this.sendEmail({
+      to: businessEmail,
+      subject: `New Lead Generated – ${readableLeadType} (${leadData?.customerName || 'Visitor'})`,
+      htmlContent,
+      textContent:
+        `A new lead has been generated through your chatbot. ` +
+        `Lead type: ${readableLeadType}. ` +
+        `Contact: ${leadData?.customerName || 'Not provided'} | ${leadData?.customerEmail || 'Not provided'} | ${leadData?.customerPhone || 'Not provided'}. ` +
+        `${leadData?.viewLeadUrl ? `View in system: ${leadData.viewLeadUrl}` : ''}`,
+      fromName: alertFromName,
+    });
+  }
+
+  async sendCompletedWorkflowNotificationEmail(businessData, leadData) {
+    const businessEmail = businessData?.email;
+    if (!businessEmail) throw new Error('Business email is required');
+
+    const companyName = businessData?.companyName || businessData?.name || 'Business';
+    const theme = getCompanyTheme(companyName, {
+      appId: businessData?.appId,
+      primaryColor: businessData?.primaryColor,
+      logoUrl: businessData?.logoUrl,
+    });
+
+    const readableLeadType = humanizeLeadType(leadData?.leadType || 'General enquiry');
+    const htmlContent = buildCompletedWorkflowNotificationHtml({
+      businessName: companyName,
+      leadType: leadData?.leadType || 'General enquiry',
+      sourceChannel: leadData?.sourceChannel || 'Chatbot',
+      status: leadData?.status || 'Complete',
+      customerName: leadData?.customerName || 'Not provided',
+      customerEmail: leadData?.customerEmail || 'Not provided',
+      customerPhone: leadData?.customerPhone || 'Not provided',
+      serviceType: leadData?.serviceType || 'Not provided',
+      initialInteraction: leadData?.initialInteraction || 'Widget opened',
+      summary: leadData?.summary || '',
+      description: leadData?.description || '',
+      conversationHistory: Array.isArray(leadData?.conversationHistory) ? leadData.conversationHistory : [],
+      completedAtText: leadData?.completedAtText || 'Just now',
+      viewLeadUrl: leadData?.viewLeadUrl || '',
+      theme,
+    });
+
+    const alertFromName =
+      process.env.BOOKING_ALERT_FROM_NAME ||
+      process.env.FROM_NAME ||
+      'UpZilo';
+
+    return this.sendEmail({
+      to: businessEmail,
+      subject: `Workflow Completed – ${readableLeadType} (${leadData?.customerName || 'Visitor'})`,
+      htmlContent,
+      textContent:
+        `A chatbot workflow has been completed. ` +
+        `Lead type: ${readableLeadType}. ` +
+        `Status: ${leadData?.status || 'Complete'}. ` +
+        `Contact: ${leadData?.customerName || 'Not provided'} | ${leadData?.customerEmail || 'Not provided'} | ${leadData?.customerPhone || 'Not provided'}. ` +
+        `${leadData?.viewLeadUrl ? `View in system: ${leadData.viewLeadUrl}` : ''}`,
       fromName: alertFromName,
     });
   }
